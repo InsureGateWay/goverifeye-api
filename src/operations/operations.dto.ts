@@ -1,0 +1,6 @@
+import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, Length } from 'class-validator'; import { PageQueryDto } from '../common/page-query.dto'; import { Type } from 'class-transformer';
+export class AuditQueryDto extends PageQueryDto { @IsOptional() @IsString() actorId?:string; @IsOptional() @IsString() action?:string; @IsOptional() @IsString() resourceType?:string; @IsOptional() @IsString() resourceId?:string; @IsOptional() @IsString() status?:string; @IsIn(['createdAt','action','resourceType','status']) override sortBy='createdAt'; }
+export class NotificationQueryDto extends PageQueryDto { @IsOptional() @Type(()=>Boolean) @IsBoolean() read?:boolean; @IsOptional() @IsString() type?:string; @IsIn(['createdAt','type','title','isRead']) override sortBy='createdAt'; }
+export class UpdateProfileDto { @IsString() @Length(1,100) firstName!:string; @IsString() @Length(1,100) lastName!:string; @IsEmail() email!:string; @IsOptional() @IsString() phone?:string; }
+export class UpdateCompanyDto { @IsString() @Length(2,200) companyName!:string; @IsString() industry!:string; @IsString() country!:string; }
+export class ChangePasswordDto { @IsString() currentPassword!:string; @IsString() @Length(10,128) newPassword!:string; }

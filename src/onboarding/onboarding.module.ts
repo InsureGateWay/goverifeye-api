@@ -1,0 +1,2 @@
+import { Module } from '@nestjs/common'; import { TypeOrmModule } from '@nestjs/typeorm'; import { OnboardingController } from './onboarding.controller'; import { OrganizationDocumentEntity,OrganizationEntity } from './onboarding.entity';
+@Module({ imports: [TypeOrmModule.forFeature([OrganizationEntity,OrganizationDocumentEntity])], controllers: [OnboardingController] }) export class OnboardingModule {}
