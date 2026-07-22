@@ -8,7 +8,8 @@
   "scripts": {
     "build": "nest build",
     "build:render": "node --max-old-space-size=384 ./node_modules/typescript/bin/tsc -p tsconfig.build.json",
-    "start": "nest start",
+    "start": "node dist/main.js",
+    "start:nest": "nest start",
     "start:prod": "node dist/main.js",
     "start:dev": "nest start --watch",
     "test": "jest",
