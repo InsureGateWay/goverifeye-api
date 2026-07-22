@@ -1,5 +1,2 @@
-import { Controller, Get } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
-import { Public } from './auth/public.decorator';
-@Public() @ApiTags('health') @Controller('health')
-export class HealthController { @Get() check() { return { status: 'ok', timestamp: new Date().toISOString() }; } }
+import{Controller,Get,ServiceUnavailableException}from'@nestjs/common';import{DataSource}from'typeorm';import{Public}from'./auth/public.decorator';
+@Public()@Controller('health')export class HealthController{constructor(private readonly db:DataSource){}@Get()check(){return{status:'ok',timestamp:new Date().toISOString()}}@Get('ready')async ready(){try{await this.db.query('SELECT 1');return{status:'ready',database:'up',timestamp:new Date().toISOString()}}catch{throw new ServiceUnavailableException('Database is unavailable')}}}

@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
-import { DataSource, ILike, In, MoreThanOrEqual } from 'typeorm';
+import { DataSource, ILike, In, MoreThan, MoreThanOrEqual } from 'typeorm'; import { createHash } from 'crypto';
 import codeGenerationConfig from '../config/code-generation.config';
 import { DomainError } from '../common/domain-error';
 import { ProductEntity } from '../products/product.entity';
@@ -19,7 +19,9 @@ export class CodesService {
     @Inject(codeGenerationConfig.KEY) private readonly options: ConfigType<typeof codeGenerationConfig>,
   ) {}
 
-  async generateBatch(organizationId: string, actorId: string, input: GenerateBatchDto) {
+  async generateBatch(organizationId: string, actorId: string, input: GenerateBatchDto,clientRequestId?:string) {
+    if(!clientRequestId||clientRequestId.length<8||clientRequestId.length>128)throw new DomainError('A valid Idempotency-Key header is required','IDEMPOTENCY_KEY_REQUIRED',400);
+    const prior=await this.dataSource.getRepository(CodeBatchEntity).findOneBy({organizationId,clientRequestId});if(prior)return{batch:prior,credentials:[],replayed:true,warning:'This request was already completed. Activation credentials are never returned again.'};
     if (input.quantity > this.options.maxCodesPerBatch) {
       throw new DomainError(`A batch cannot exceed ${this.options.maxCodesPerBatch} codes`, 'BATCH_LIMIT_EXCEEDED');
     }
@@ -30,7 +32,7 @@ export class CodesService {
       if (product.status !== ProductStatus.Active) throw new DomainError('Codes can only be generated for an active product', 'PRODUCT_NOT_ACTIVE', 409);
 
       const batch = await manager.save(CodeBatchEntity, manager.create(CodeBatchEntity, {
-        organizationId, productId: product.id, generatedBy: actorId, labelType: input.labelType,
+        organizationId, clientRequestId, productId: product.id, generatedBy: actorId, labelType: input.labelType,
         fulfillment: input.fulfillment, paperSize: input.paperSize, quantity: input.quantity,
         status: BatchStatus.Generating,
       }));
@@ -86,21 +88,22 @@ export class CodesService {
     return result.code;
   }
 
-  async verify(verificationCode: string) {
+  async verify(verificationCode: string,context:{ip?:string;userAgent?:string;location?:string}={}) {
     return this.dataSource.transaction(async manager => {
       const record = await manager.findOne(VerificationCodeEntity, { where: { code: verificationCode }, lock: { mode: 'pessimistic_write' } });
       if (!record || record.status !== VerificationCodeStatus.Active) return { valid: false, status: record?.status ?? 'not_found' };
       const product = await manager.findOneBy(ProductEntity, { id: record.productId, organizationId: record.organizationId });
       if (!product || product.status !== ProductStatus.Active) return { valid: false, status: 'product_unavailable' };
+      const recent=await manager.countBy(VerificationEventEntity,{codeId:record.id,createdAt:MoreThan(new Date(Date.now()-10*60_000))});const reasons:string[]=[];if(recent>=5)reasons.push('high_frequency');if(record.verificationCount>0)reasons.push('repeat_scan');const riskScore=Math.min(100,(recent>=5?70:0)+(record.verificationCount>0?20:0)),outcome=riskScore>=70?'suspicious':'valid';
       record.verificationCount += 1; record.lastVerifiedAt = new Date(); await manager.save(VerificationCodeEntity, record);
-      product.scanned += 1; await manager.save(ProductEntity, product);
-      await manager.save(VerificationEventEntity,manager.create(VerificationEventEntity,{organizationId:record.organizationId,productId:record.productId,codeId:record.id,outcome:'valid'}));
+      product.scanned += 1;if(outcome==='suspicious')product.suspicious+=1;await manager.save(ProductEntity, product);
+      const hash=(value:string|undefined)=>value?createHash('sha256').update(`${process.env.CODE_ACTIVATION_PEPPER}:${value}`).digest('hex'):undefined;await manager.save(VerificationEventEntity,manager.create(VerificationEventEntity,{organizationId:record.organizationId,productId:record.productId,codeId:record.id,outcome,location:context.location,ipHash:hash(context.ip),userAgentHash:hash(context.userAgent),riskScore,riskReasons:reasons}));
       return { valid: true, status: 'active', firstVerification: record.verificationCount === 1, verificationCount: record.verificationCount,
-        product: { id: product.id, name: product.name, description: product.description, form: product.form, manufacturer: product.manufacturer, imageUrl: product.imageUrl } };
+        outcome,risk:outcome==='suspicious'?'review_recommended':'low',product: { id: product.id, name: product.name, description: product.description, form: product.form, manufacturer: product.manufacturer, imageUrl: product.imageUrl } };
     });
   }
 
-  async listBatches(organizationId: string, query: BatchQueryDto) { const repo = this.dataSource.getRepository(CodeBatchEntity); const where = { organizationId, ...(query.productId ? { productId: query.productId } : {}), ...(query.labelType ? { labelType: query.labelType } : {}), ...(query.fulfillment ? { fulfillment: query.fulfillment } : {}), ...(query.status ? { status: query.status } : {}) }; const order = toOrder(query.sortBy, query.sortDirection, ['createdAt', 'quantity', 'status', 'labelType'] as const, 'createdAt'); const [data, total] = await repo.findAndCount({ where, order, skip: (query.page - 1) * query.pageSize, take: query.pageSize }); return pageOf(data, total, query.page, query.pageSize, query.sortBy, query.sortDirection); }
+  async listBatches(organizationId:string,query:BatchQueryDto){const allowed=new Set(['createdAt','quantity','status','labelType']),sort=allowed.has(query.sortBy)?query.sortBy:'createdAt',qb=this.dataSource.getRepository(CodeBatchEntity).createQueryBuilder('batch').leftJoin(ProductEntity,'product','product.id = batch.productId AND product.organizationId = batch.organizationId').addSelect('product.name','productName').where('batch.organizationId = :organizationId',{organizationId});if(query.productId)qb.andWhere('batch.productId = :productId',{productId:query.productId});if(query.labelType)qb.andWhere('batch.labelType = :labelType',{labelType:query.labelType});if(query.fulfillment)qb.andWhere('batch.fulfillment = :fulfillment',{fulfillment:query.fulfillment});if(query.status)qb.andWhere('batch.status = :status',{status:query.status});if(query.search){const isId=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(query.search);qb.andWhere(isId?'(batch.id = :batchId OR LOWER(product.name) LIKE :search)':'LOWER(product.name) LIKE :search',{batchId:query.search,search:`%${query.search.toLowerCase()}%`})}qb.orderBy(`batch.${sort}`,query.sortDirection.toUpperCase()as'ASC'|'DESC').skip((query.page-1)*query.pageSize).take(query.pageSize);const total=await qb.clone().skip(undefined).take(undefined).getCount(),{entities,raw}=await qb.getRawAndEntities();return pageOf(entities.map((row,index)=>({...row,productName:raw[index]?.productName})),total,query.page,query.pageSize,query.sortBy,query.sortDirection)}
   async getBatch(organizationId: string, id: string) {
     const batch = await this.dataSource.getRepository(CodeBatchEntity).findOneBy({ id, organizationId });
     if (!batch) throw new DomainError('Code batch was not found', 'BATCH_NOT_FOUND', 404);

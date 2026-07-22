@@ -1,8 +1,8 @@
-import { Type } from 'class-transformer'; import { IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, Min } from 'class-validator';
+import { Type } from 'class-transformer'; import { IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
 import { PageQueryDto } from '../common/page-query.dto'; import { BatchStatus, Fulfillment, LabelType, VerificationCodeStatus } from './code.enums';
 export { BatchStatus, Fulfillment, LabelType, VerificationCodeStatus } from './code.enums';
 export class GenerateBatchDto { @IsUUID() productId!: string; @IsEnum(LabelType) labelType!: LabelType; @IsEnum(Fulfillment) fulfillment!: Fulfillment; @Type(() => Number) @IsInt() @Min(100) @Max(10000) quantity!: number; @IsOptional() @IsString() paperSize?: string; }
 export class ActivateCodeDto { @Matches(/^\d{16}$/) verificationCode!: string; @Matches(/^\d{6,12}$/) activationCode!: string; }
-export class VerifyProductCodeDto { @Matches(/^\d{16}$/) verificationCode!: string; }
+export class VerifyProductCodeDto { @Matches(/^\d{16}$/) verificationCode!: string; @IsOptional() @IsString() @Length(2,100) location?:string; }
 export class BatchQueryDto extends PageQueryDto { @IsOptional() @IsUUID() productId?: string; @IsOptional() @IsEnum(LabelType) labelType?: LabelType; @IsOptional() @IsEnum(Fulfillment) fulfillment?: Fulfillment; @IsOptional() @IsEnum(BatchStatus) status?: BatchStatus; @IsIn(['createdAt','quantity','status','labelType']) override sortBy='createdAt'; }
 export class CodeQueryDto extends PageQueryDto { @IsOptional() @IsEnum(VerificationCodeStatus) status?: VerificationCodeStatus; @IsOptional() @Type(() => Number) @IsInt() @Min(0) verificationCountMin?: number; @IsIn(['code','status','createdAt','activatedAt','verificationCount','lastVerifiedAt']) override sortBy='createdAt'; }

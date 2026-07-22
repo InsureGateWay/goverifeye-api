@@ -1,0 +1,2 @@
+import{Column,Entity,Index}from'typeorm';import{BaseEntity}from'../database/base.entity';
+@Entity('approval_decisions')@Index(['resourceType','resourceId','createdAt'])export class ApprovalDecisionEntity extends BaseEntity{@Column()resourceType!:'product'|'onboarding';@Column('uuid')resourceId!:string;@Column('uuid')organizationId!:string;@Column()decision!:'approved'|'rejected'|'changes_requested';@Column('uuid')reviewedBy!:string;@Column({type:'text',nullable:true})notes?:string}

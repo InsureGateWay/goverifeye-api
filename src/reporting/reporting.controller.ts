@@ -6,6 +6,8 @@ import { Controller,Get,Param,Query } from '@nestjs/common'; import { ApiBearerA
  @Get('reports/suspicious-scans') suspicious(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.suspicious(u.organizationId,q)}
  @Get('reports/verification-events') events(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.events(u.organizationId,q)}
  @Get('reports/locations') locations(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.locations(u.organizationId,q)}
+ @Get('reports/trends') trends(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.trends(u.organizationId,q)}
+ @Get('reports/funnel') funnel(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.funnel(u.organizationId,q)}
  @Get('dashboard/top-products') dashboardTop(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.topProducts(u.organizationId,q)}
  @Get('dashboard/locations') dashboardLocations(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.locations(u.organizationId,q)}
  @Get('dashboard/scan-events') dashboardEvents(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.events(u.organizationId,q)}

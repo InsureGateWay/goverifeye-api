@@ -8,7 +8,9 @@ export type DatabaseOptions = (PostgresConnectionOptions | MysqlConnectionOption
 export default registerAs('database', (): DatabaseOptions => ({
   type: (process.env.DATABASE_TYPE ?? 'postgres') as SupportedDatabase,
   url: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: true } : false,
+  ssl: process.env.DATABASE_SSL === 'true'
+    ? { rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false' }
+    : false,
   logging: process.env.DATABASE_LOGGING === 'true',
   synchronize: false,
   autoLoadEntities: true,

@@ -23,12 +23,14 @@ Each verification code starts `inactive` and has a separate numeric activation s
 
 ## Run
 
-1. Copy `.env.example` to `.env` and replace secrets.
+1. Copy `.env.example` to `.env` and replace secrets. This workspace now has a Git-ignored development `.env`; never reuse those values outside local development.
 2. Install dependencies with `npm install`.
-3. Create the configured database.
+3. Start PostgreSQL (or MySQL) and create the configured database. Pending migrations run automatically at startup.
 4. Run `npm run start:dev`.
 
 Swagger is exposed at `/docs`; health is at `/api/v1/health`. Run tests with `npm test` and coverage with `npm run test:cov`.
+
+Readiness, Gmail, and storage configuration are documented in `docs/API_GAP_CLOSURE_REPORT.md`. The API uses Gmail OAuth offline credentials for email and private Supabase Storage buckets for compliance documents and generated artifacts. Payment processing is intentionally deferred and returns HTTP 501.
 
 ## Production notes
 
