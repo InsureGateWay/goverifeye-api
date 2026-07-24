@@ -10,16 +10,17 @@ describe('OutlookEmailService', () => {
   });
 
   it('fails closed when SMTP credentials are placeholders', async () => {
-    process.env.OUTLOOK_SMTP_USER = 'replace-user';
+    process.env.SMTP_USER = 'replace-user';
     await expect(new OutlookEmailService().send({ to: 'user@example.com', subject: 'Test', text: 'Body' })).rejects.toThrow('not configured');
   });
 
   it('sends HTML and text through Outlook STARTTLS SMTP', async () => {
     Object.assign(process.env, {
-      OUTLOOK_SMTP_USER: 'sender@outlook.com',
-      OUTLOOK_SMTP_PASSWORD: 'secret',
-      OUTLOOK_FROM_EMAIL: 'sender@outlook.com',
-      OUTLOOK_FROM_NAME: 'goVerifEye',
+      SMTP_USER: 'sender@outlook.com',
+      SMTP_PASSWORD: 'secret',
+      SMTP_FROM_EMAIL: 'sender@outlook.com',
+      SMTP_FROM_NAME: 'goVerifEye',
+      SMTP_SECURE: 'false',
     });
     const sendMail = jest.fn().mockResolvedValue({ messageId: '<message-id@outlook.com>' });
     const createTransport = jest.spyOn(nodemailer, 'createTransport').mockReturnValue({ sendMail } as never);

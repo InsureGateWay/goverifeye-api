@@ -5,7 +5,7 @@ export interface EmailContent {
 }
 
 const BRAND_GREEN = '#129136';
-const supportEmail = () => process.env.EMAIL_SUPPORT_ADDRESS ?? process.env.OUTLOOK_FROM_EMAIL ?? '';
+const supportEmail = () => process.env.EMAIL_SUPPORT_ADDRESS ?? process.env.SMTP_FROM_EMAIL ?? '';
 
 function escapeHtml(value: string) {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');

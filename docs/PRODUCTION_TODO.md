@@ -53,8 +53,8 @@ Use this as a release gate. Do not mark the API production-ready until every app
 
 - [ ] Create a dedicated Google Cloud production project and OAuth client.
 - [ ] Enable the Gmail API and authorize only the `gmail.send` scope.
-- [ ] Enable authenticated SMTP for the Microsoft 365 mailbox and securely store `OUTLOOK_SMTP_USER` and `OUTLOOK_SMTP_PASSWORD`.
-- [ ] Use a dedicated authorized sender configured through `OUTLOOK_FROM_EMAIL` and `OUTLOOK_FROM_NAME`.
+- [ ] Enable authenticated SMTP for the Microsoft 365 mailbox and securely store `SMTP_USER` and `SMTP_PASSWORD`.
+- [ ] Use a dedicated authorized sender configured through `SMTP_FROM_EMAIL` and `SMTP_FROM_NAME`.
 - [ ] Configure and verify the sender domain's SPF, DKIM, and DMARC records.
 - [ ] Review Google OAuth verification requirements and Gmail sending quotas.
 - [ ] Test OTP and invitation delivery, retries, revoked refresh tokens, quota failures, and dead-letter recovery.
