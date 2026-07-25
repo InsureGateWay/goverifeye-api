@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import { randomUUID } from 'crypto'; import type { NextFunction,Request,Response } from 'express';
 import { AppModule } from './app.module';
 import type { AppOptions } from './config/app.config';
+import { enrichOpenApiDocument } from './common/openapi-document';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
@@ -17,7 +18,8 @@ async function bootstrap() {
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   const swagger = new DocumentBuilder().setTitle('goVerifEye API').setVersion('1.0').addBearerAuth().build();
-  SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, swagger));
+  const openApiDocument = enrichOpenApiDocument(SwaggerModule.createDocument(app, swagger));
+  SwaggerModule.setup('docs', app, openApiDocument);
   app.enableShutdownHooks();
   await app.listen(options.port);
 }
