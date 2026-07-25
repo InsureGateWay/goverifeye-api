@@ -64,3 +64,90 @@ export function invitationEmail(input: { firstName?: string; role?: string; invi
     }),
   };
 }
+
+export function vendorOnboardingSubmittedEmail(input: {
+  firstName?: string;
+  companyName: string;
+  dashboardUrl: string;
+  termsUrl: string;
+  userGuideUrl: string;
+  dataUsePolicyUrl: string;
+}): EmailContent {
+  const greeting = input.firstName ? `Hi ${input.firstName},` : 'Hello,';
+  const reviewMessage = 'Your onboarding information has been submitted for administrator review. We will email you when verification is complete or if anything else is required.';
+
+  return {
+    subject: `We received your goVerifEye onboarding, ${input.companyName}`,
+    text: `${greeting}
+
+Welcome to goVerifEye. You have completed onboarding for ${input.companyName}. ${reviewMessage}
+
+Next steps:
+1. Open your dashboard: ${input.dashboardUrl}
+2. Complete your organization profile and invite your team.
+3. Add your products and supporting product information.
+4. Review the user guide: ${input.userGuideUrl}
+
+Terms and Conditions: ${input.termsUrl}
+Data Use Policy: ${input.dataUsePolicyUrl}`,
+    html: layout({
+      preheader: `Onboarding is complete for ${input.companyName}.`,
+      heading: 'Welcome to goVerifEye',
+      body: `<p style="margin:0 0 14px">${escapeHtml(greeting)}</p>
+<p style="margin:0 0 18px">You have completed onboarding for <strong>${escapeHtml(input.companyName)}</strong>. ${escapeHtml(reviewMessage)}</p>
+<h2 style="margin:24px 0 12px;font-size:19px;line-height:26px;color:#132d1c">Your next steps</h2>
+<ol style="margin:0 0 22px;padding-left:22px">
+  <li style="margin-bottom:9px">Open your dashboard and review your organization profile.</li>
+  <li style="margin-bottom:9px">Invite the colleagues who will help manage your account.</li>
+  <li style="margin-bottom:9px">Add your products and their supporting information.</li>
+  <li>Read the <a href="${escapeHtml(input.userGuideUrl)}" style="color:${BRAND_GREEN};font-weight:700">goVerifEye user guide</a>.</li>
+</ol>
+<p style="margin:0;font-size:14px;line-height:22px">By using goVerifEye, you agree to our <a href="${escapeHtml(input.termsUrl)}" style="color:${BRAND_GREEN}">Terms and Conditions</a>. Learn how information is handled in our <a href="${escapeHtml(input.dataUsePolicyUrl)}" style="color:${BRAND_GREEN}">Data Use Policy</a>.</p>`,
+      action: { label: 'Go to dashboard', url: input.dashboardUrl },
+      notice: escapeHtml(reviewMessage),
+    }),
+  };
+}
+
+export function vendorVerifiedEmail(input: { firstName?: string; companyName: string; dashboardUrl: string; userGuideUrl: string }): EmailContent {
+  const greeting = input.firstName ? `Hi ${input.firstName},` : 'Hello,';
+  return {
+    subject: `${input.companyName} has been verified on goVerifEye`,
+    text: `${greeting}
+
+Good news — an administrator has verified ${input.companyName}. Your vendor account is now active.
+
+Next steps:
+1. Open your dashboard: ${input.dashboardUrl}
+2. Add your products and supporting information.
+3. Invite your team.
+4. Read the user guide: ${input.userGuideUrl}`,
+    html: layout({
+      preheader: `${input.companyName} is now verified on goVerifEye.`,
+      heading: 'Your vendor account is verified',
+      body: `<p style="margin:0 0 14px">${escapeHtml(greeting)}</p><p style="margin:0 0 18px">Good news — an administrator has verified <strong>${escapeHtml(input.companyName)}</strong>. Your vendor account is now active.</p><h2 style="margin:24px 0 12px;font-size:19px;color:#132d1c">What to do next</h2><ol style="margin:0;padding-left:22px"><li style="margin-bottom:9px">Review your dashboard and organization profile.</li><li style="margin-bottom:9px">Add your products and supporting information.</li><li style="margin-bottom:9px">Invite colleagues who will manage your account.</li><li>Read the <a href="${escapeHtml(input.userGuideUrl)}" style="color:${BRAND_GREEN};font-weight:700">user guide</a>.</li></ol>`,
+      action: { label: 'Open dashboard', url: input.dashboardUrl },
+      notice: 'Verification is complete. You can now use the vendor features available to your organization.',
+    }),
+  };
+}
+
+export function passwordResetCodeEmail(input: { firstName?: string; code: string; expiresInMinutes: number }): EmailContent {
+  const greeting = input.firstName ? `Hi ${input.firstName},` : 'Hello,';
+  return {
+    subject: 'Reset your goVerifEye password',
+    text: `${greeting}
+
+We received a request to reset your goVerifEye password.
+
+Your password reset code is: ${input.code}
+
+This single-use link expires in ${input.expiresInMinutes} minutes. If you did not request this, you can safely ignore this email. Your password has not been changed.`,
+    html: layout({
+      preheader: `${input.code} is your goVerifEye password reset code.`,
+      heading: 'Reset your password',
+      body: `<p style="margin:0 0 14px">${escapeHtml(greeting)}</p><p style="margin:0 0 18px">We received a request to reset your goVerifEye password. Enter this code in the app:</p><div style="padding:18px;text-align:center;background:#f4f7f5;border:1px solid #dce7df;border-radius:8px;font-size:32px;font-weight:800;letter-spacing:8px;color:#132d1c">${escapeHtml(input.code)}</div>`,
+      notice: `This code can be used once and expires in <strong>${input.expiresInMinutes} minutes</strong>. If you did not request this, ignore this email; your password remains unchanged.`,
+    }),
+  };
+}

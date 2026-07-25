@@ -1,2 +1,4 @@
 import { Module } from '@nestjs/common'; import { TypeOrmModule } from '@nestjs/typeorm'; import { OnboardingController } from './onboarding.controller'; import { OrganizationDocumentEntity,OrganizationEntity } from './onboarding.entity'; import { DocumentStorageService } from './document-storage.service'; import { DocumentSecurityService } from './document-security.service'; import { MalwareScannerService } from './malware-scanner.service';
-@Module({ imports: [TypeOrmModule.forFeature([OrganizationEntity,OrganizationDocumentEntity])], controllers: [OnboardingController],providers:[DocumentStorageService,DocumentSecurityService,MalwareScannerService] }) export class OnboardingModule {}
+import { OperationsModule } from '../operations/operations.module';
+import { OnboardingWelcomeService } from './onboarding-welcome.service';
+@Module({ imports: [TypeOrmModule.forFeature([OrganizationEntity,OrganizationDocumentEntity]),OperationsModule], controllers: [OnboardingController],providers:[DocumentStorageService,DocumentSecurityService,MalwareScannerService,OnboardingWelcomeService],exports:[OnboardingWelcomeService] }) export class OnboardingModule {}

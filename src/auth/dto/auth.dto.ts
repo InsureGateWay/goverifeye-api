@@ -40,6 +40,32 @@ export class RefreshDto {
   @IsString()
   refreshToken!:string;
 }
+export class ForgotPasswordDto {
+  @ApiProperty({description:'Account email address. The response is identical whether or not an account exists.',example:'tester@example.com',format:'email'})
+  @IsEmail()
+  email!:string;
+}
+export class ResetPasswordDto {
+  @ApiProperty({description:'Account email address used to request the reset code',example:'tester@example.com',format:'email'})
+  @IsEmail()
+  email!:string;
+  @ApiProperty({description:'Six-digit password-reset code received by email',example:'482193',pattern:'^\\d{6}$'})
+  @Matches(/^\d{6}$/)
+  code!:string;
+  @ApiProperty({description:'New account password',example:'NewSecurePass123!',minLength:10,maxLength:128})
+  @IsString()
+  @Length(10,128)
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/,{message:'password must include uppercase, lowercase, and a number'})
+  password!:string;
+}
+export class ForgotPasswordResponseDto {
+  @ApiProperty({example:'If an account exists for that email, a password reset link has been sent.'})
+  message!:string;
+  @ApiProperty({example:600}) expiresInSeconds!:number;
+}
+export class ResetPasswordResponseDto {
+  @ApiProperty({example:true}) passwordReset!:boolean;
+}
 export class SessionQueryDto extends PageQueryDto { @IsIn(['createdAt','updatedAt','expiresAt','revokedAt']) override sortBy='createdAt'; }
 export class OtpChallengeResponseDto {
   @ApiProperty({ format: 'uuid', example: 'f17fdb48-05ec-44bf-b882-d480c90e0c91' }) challengeId!: string;
