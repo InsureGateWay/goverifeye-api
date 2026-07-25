@@ -63,6 +63,11 @@ export class OutboxProcessorService implements OnApplicationBootstrap, OnApplica
         if (!item) break;
         await this.process(item);
       }
+    } catch (error) {
+      const diagnostic = formatDeliveryError(error);
+      this.logger.error(
+        `Outbox polling interrupted by database failure; the application will remain running and retry on the next poll. error={${diagnostic}}`,
+      );
     } finally {
       this.running = false;
     }

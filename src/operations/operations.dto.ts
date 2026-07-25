@@ -1,6 +1,7 @@
 import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, Length } from 'class-validator'; import { PageQueryDto } from '../common/page-query.dto'; import { Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 export class AuditQueryDto extends PageQueryDto { @IsOptional() @IsString() actorId?:string; @IsOptional() @IsString() action?:string; @IsOptional() @IsString() resourceType?:string; @IsOptional() @IsString() resourceId?:string; @IsOptional() @IsString() status?:string; @IsIn(['createdAt','action','resourceType','status']) override sortBy='createdAt'; }
 export class NotificationQueryDto extends PageQueryDto { @IsOptional() @Type(()=>Boolean) @IsBoolean() read?:boolean; @IsOptional() @IsString() type?:string; @IsIn(['createdAt','type','title','isRead']) override sortBy='createdAt'; }
-export class UpdateProfileDto { @IsString() @Length(1,100) firstName!:string; @IsString() @Length(1,100) lastName!:string; @IsEmail() email!:string; @IsOptional() @IsString() phone?:string; }
-export class UpdateCompanyDto { @IsString() @Length(2,200) companyName!:string; @IsString() industry!:string; @IsString() country!:string; }
-export class ChangePasswordDto { @IsString() currentPassword!:string; @IsString() @Length(10,128) newPassword!:string; }
+export class UpdateProfileDto { @ApiProperty({example:'Ada'}) @IsString() @Length(1,100) firstName!:string; @ApiProperty({example:'Okafor'}) @IsString() @Length(1,100) lastName!:string; @ApiProperty({example:'ada@example.com',format:'email'}) @IsEmail() email!:string; @ApiPropertyOptional({example:'+2348012345678'}) @IsOptional() @IsString() phone?:string; }
+export class UpdateCompanyDto { @ApiProperty({example:'Verified Goods Ltd'}) @IsString() @Length(2,200) companyName!:string; @ApiProperty({example:'Pharmaceuticals'}) @IsString() industry!:string; @ApiProperty({example:'Nigeria'}) @IsString() country!:string; }
+export class ChangePasswordDto { @ApiProperty({example:'CurrentPass123!'}) @IsString() currentPassword!:string; @ApiProperty({example:'NewSecurePass123!',minLength:10,maxLength:128}) @IsString() @Length(10,128) newPassword!:string; }

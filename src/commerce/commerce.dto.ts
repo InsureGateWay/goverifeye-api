@@ -1,7 +1,8 @@
 import { Type } from 'class-transformer';import{IsEnum,IsIn,IsInt,IsOptional,IsString,IsUUID,Length,Max,Min}from'class-validator';import{PageQueryDto}from'../common/page-query.dto';import{LabelType}from'../codes/code.enums';
-export class QuoteDto{@IsUUID()productId!:string;@IsEnum(LabelType)labelType!:LabelType;@Type(()=>Number)@IsInt()@Min(100)@Max(10000)quantity!:number}
-export class CreatePaymentDto extends QuoteDto{@IsString()method!:'online'|'bank'}
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+export class QuoteDto{@ApiProperty({format:'uuid',example:'55af73e4-4c52-4c2a-aec5-030f218760a8'})@IsUUID()productId!:string;@ApiProperty({enum:LabelType})@IsEnum(LabelType)labelType!:LabelType;@ApiProperty({minimum:100,maximum:10000,example:100})@Type(()=>Number)@IsInt()@Min(100)@Max(10000)quantity!:number}
+export class CreatePaymentDto extends QuoteDto{@ApiProperty({enum:['online','bank'],example:'online'})@IsString()method!:'online'|'bank'}
 export class JobQueryDto extends PageQueryDto{@IsOptional()@IsString()type?:string;@IsOptional()@IsString()status?:string;@IsIn(['createdAt','updatedAt','type','status','amount','subject'])override sortBy='createdAt'}
-export class CreateExportJobDto{@IsString()type!:'batch-export'|'batch-print'|'report-export';@IsOptional()@IsUUID()batchId?:string;@IsOptional()@IsString()format?:string}
-export class CreateSupportTicketDto{@IsString()@Length(3,200)subject!:string;@IsString()@Length(10,4000)message!:string}
-export class UpdateSupportTicketDto{@IsIn(['open','in_progress','resolved','closed'])status!:'open'|'in_progress'|'resolved'|'closed'}
+export class CreateExportJobDto{@ApiProperty({enum:['batch-export','batch-print','report-export'],example:'batch-export'})@IsString()type!:'batch-export'|'batch-print'|'report-export';@ApiPropertyOptional({format:'uuid'})@IsOptional()@IsUUID()batchId?:string;@ApiPropertyOptional({example:'csv'})@IsOptional()@IsString()format?:string}
+export class CreateSupportTicketDto{@ApiProperty({example:'Unable to download code batch'})@IsString()@Length(3,200)subject!:string;@ApiProperty({example:'The download remains unavailable after the batch completed.'})@IsString()@Length(10,4000)message!:string}
+export class UpdateSupportTicketDto{@ApiProperty({enum:['open','in_progress','resolved','closed'],example:'in_progress'})@IsIn(['open','in_progress','resolved','closed'])status!:'open'|'in_progress'|'resolved'|'closed'}
