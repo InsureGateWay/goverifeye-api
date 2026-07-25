@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
 import { DataSource, LessThanOrEqual } from 'typeorm';
 import { ArtifactJobService } from './artifact-job.service';
-import { EmailMessage, OutlookEmailService } from './outlook-email.service';
+import { EmailDeliveryService, EmailMessage } from './email-delivery.service';
 import { OutboxMessageEntity } from './operations.entity';
 
 type DeliveryError = Error & {
@@ -40,7 +40,7 @@ export class OutboxProcessorService implements OnApplicationBootstrap, OnApplica
 
   constructor(
     private readonly db: DataSource,
-    private readonly email: OutlookEmailService,
+    private readonly email: EmailDeliveryService,
     private readonly artifacts: ArtifactJobService,
   ) {}
 

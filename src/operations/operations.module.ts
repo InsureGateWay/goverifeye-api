@@ -4,7 +4,7 @@ import { UserEntity } from '../auth/auth.entity';
 import { OrganizationEntity } from '../onboarding/onboarding.entity';
 import { BackgroundJobEntity } from '../commerce/commerce.entity'; import { VerificationCodeEntity } from '../codes/code.entity'; import { ArtifactJobService } from './artifact-job.service';
 import { AuditLogEntity, IdempotencyRecordEntity, NotificationEntity, OutboxMessageEntity } from './operations.entity';
-import { OutlookEmailService } from './outlook-email.service';
+import { EmailDeliveryService } from './email-delivery.service';
 import { OperationsController } from './operations.controller';
 import { OperationsService } from './operations.service';
 import { OutboxProcessorService } from './outbox-processor.service';
@@ -13,7 +13,7 @@ import { ReliabilityService } from './reliability.service';
 @Module({
   imports: [TypeOrmModule.forFeature([AuditLogEntity, NotificationEntity, OutboxMessageEntity, IdempotencyRecordEntity, UserEntity, OrganizationEntity,BackgroundJobEntity,VerificationCodeEntity])],
   controllers: [OperationsController],
-  providers: [OperationsService, ReliabilityService, OutlookEmailService, ArtifactJobService,OutboxProcessorService],
-  exports: [OperationsService, ReliabilityService, OutlookEmailService],
+  providers: [OperationsService, ReliabilityService, EmailDeliveryService, ArtifactJobService,OutboxProcessorService],
+  exports: [OperationsService, ReliabilityService, EmailDeliveryService],
 })
 export class OperationsModule {}
