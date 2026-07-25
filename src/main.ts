@@ -7,9 +7,11 @@ import { randomUUID } from 'crypto'; import type { NextFunction,Request,Response
 import { AppModule } from './app.module';
 import type { AppOptions } from './config/app.config';
 import { enrichOpenApiDocument } from './common/openapi-document';
+import { StructuredLoggerService } from './common/structured-logger.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  app.useLogger(new StructuredLoggerService());
   const options = app.get(ConfigService).getOrThrow<AppOptions>('app');
   app.use(helmet());
   app.use((request:Request,response:Response,next:NextFunction)=>{const correlationId=String(request.headers['x-correlation-id']??randomUUID());request.headers['x-correlation-id']=correlationId;response.setHeader('x-correlation-id',correlationId);next();});
@@ -23,4 +25,12 @@ async function bootstrap() {
   app.enableShutdownHooks();
   await app.listen(options.port);
 }
-void bootstrap();
+void bootstrap().catch((error: unknown) => {
+  new StructuredLoggerService().fatal({
+    event: 'application.bootstrap.failed',
+    errorName: error instanceof Error ? error.name : 'UnknownError',
+    errorMessage: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
+  });
+  process.exitCode = 1;
+});

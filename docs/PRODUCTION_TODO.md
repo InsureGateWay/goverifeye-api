@@ -1,5 +1,7 @@
 # goVerifEye API Production TODO
 
+> Before production launch, ensure `DEMO_AUTO_APPROVE_ONBOARDING=false`. The `true` setting bypasses platform review and is intended only for demonstrations.
+
 Last updated: July 22, 2026
 
 Use this as a release gate. Do not mark the API production-ready until every applicable P0 item is checked and evidenced in the deployment record.
