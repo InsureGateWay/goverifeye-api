@@ -20,9 +20,9 @@ export class RegisterDto {
   @IsString()
   registrationToken!:string;
 
-  @ApiProperty({ description: 'Account password; must contain between 10 and 128 characters', example: 'SecurePass123!', minLength: 10, maxLength: 128 })
+  @ApiProperty({ description: 'Account password; must contain between 6 and 128 characters', example: 'SecurePass123!', minLength: 6, maxLength: 128 })
   @IsString()
-  @Length(10, 128)
+  @Length(6, 128)
   password!: string;
 }
 export class LoginDto {
@@ -52,9 +52,9 @@ export class ResetPasswordDto {
   @ApiProperty({description:'Six-digit password-reset code received by email',example:'482193',pattern:'^\\d{6}$'})
   @Matches(/^\d{6}$/)
   code!:string;
-  @ApiProperty({description:'New account password',example:'NewSecurePass123!',minLength:10,maxLength:128})
+  @ApiProperty({description:'New account password',example:'NewSecurePass123!',minLength:6,maxLength:128})
   @IsString()
-  @Length(10,128)
+  @Length(6,128)
   @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/,{message:'password must include uppercase, lowercase, and a number'})
   password!:string;
 }

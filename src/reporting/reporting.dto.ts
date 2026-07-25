@@ -5,5 +5,5 @@ export class ReportingQueryDto extends PageQueryDto {
   @IsOptional() @IsDateString() from?: string;
   @IsOptional() @IsDateString() to?: string;
   @IsOptional() @IsString() range = 'weekly';
-  @IsIn(['createdAt','name','scanned','suspicious','totalCodes','updatedAt','outcome','location','action','status']) override sortBy = 'createdAt';
+  @IsIn(['createdAt','name','scanned','scans','suspicious','totalCodes','updatedAt','outcome','location','action','status']) override sortBy = 'createdAt';
 }
