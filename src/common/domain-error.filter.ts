@@ -1,6 +1,7 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { DomainError } from './domain-error';
+import { QueryFailedError } from 'typeorm';
 
 @Catch()
 export class DomainErrorFilter implements ExceptionFilter {
@@ -19,6 +20,10 @@ export class DomainErrorFilter implements ExceptionFilter {
       status = error.status;
       code = error.code;
       title = error.message;
+    } else if (error instanceof QueryFailedError && (error.driverError as { code?: string })?.code === '23505') {
+      status = HttpStatus.CONFLICT;
+      code = 'RESOURCE_ALREADY_EXISTS';
+      title = 'A record with these unique details already exists';
     } else if (error instanceof HttpException) {
       status = error.getStatus();
       const body = error.getResponse();

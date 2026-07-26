@@ -1,6 +1,6 @@
-import { IsEmail, IsString, Length, Matches } from 'class-validator';
+import { IsBoolean, IsEmail, IsOptional, IsString, Length, Matches } from 'class-validator';
 import { IsIn } from 'class-validator'; import { PageQueryDto } from '../../common/page-query.dto';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 export class RequestOtpDto {
   @ApiProperty({ description: 'Email address that will receive the six-digit verification code', example: 'tester@example.com', format: 'email' })
   @IsEmail()
@@ -34,11 +34,17 @@ export class LoginDto {
   @IsString()
   @Length(1, 128)
   password!: string;
+
+  @ApiPropertyOptional({ description: 'Keep the browser session available after the browser closes', example: true, default: false })
+  @IsOptional()
+  @IsBoolean()
+  rememberMe = false;
 }
 export class RefreshDto {
-  @ApiProperty({ description: 'Refresh token returned by registration, login, or a previous refresh', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' })
+  @ApiPropertyOptional({ description: 'Refresh token for non-browser clients. Browsers may use the secure refresh cookie.', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' })
+  @IsOptional()
   @IsString()
-  refreshToken!:string;
+  refreshToken?:string;
 }
 export class ForgotPasswordDto {
   @ApiProperty({description:'Account email address. The response is identical whether or not an account exists.',example:'tester@example.com',format:'email'})
