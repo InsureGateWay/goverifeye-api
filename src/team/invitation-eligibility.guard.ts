@@ -1,5 +1,5 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
-import { DataSource, IsNull } from 'typeorm';
+import { DataSource, IsNull, Raw } from 'typeorm';
 import { UserEntity } from '../auth/auth.entity';
 import { DomainError } from '../common/domain-error';
 import { RequestContext } from '../common/request-context';
@@ -15,8 +15,14 @@ export class InvitationEligibilityGuard implements CanActivate {
     if(!email||!request.user)return true;
     request.body!.email=email;
     const[account,pending]=await Promise.all([
-      this.dataSource.getRepository(UserEntity).findOneBy({email}),
-      this.dataSource.getRepository(TeamInvitationEntity).findOneBy({organizationId:request.user.organizationId,email,acceptedAt:IsNull(),revokedAt:IsNull()}),
+      this.dataSource.getRepository(UserEntity).findOneBy({
+        email:Raw(column=>`LOWER(TRIM(${column})) = :email`,{email}),
+      }),
+      this.dataSource.getRepository(TeamInvitationEntity).findOneBy({
+        email:Raw(column=>`LOWER(TRIM(${column})) = :email`,{email}),
+        acceptedAt:IsNull(),
+        revokedAt:IsNull(),
+      }),
     ]);
     if(account)throw new DomainError('A user account already exists for this email address','INVITEE_ACCOUNT_ALREADY_EXISTS',409);
     if(pending)throw new DomainError('A pending invitation already exists for this email address','INVITATION_ALREADY_PENDING',409);

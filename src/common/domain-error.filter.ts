@@ -20,7 +20,7 @@ export class DomainErrorFilter implements ExceptionFilter {
       status = error.status;
       code = error.code;
       title = error.message;
-    } else if (error instanceof QueryFailedError && (error.driverError as { code?: string })?.code === '23505') {
+    } else if (error instanceof QueryFailedError && ['23505','ER_DUP_ENTRY'].includes((error.driverError as { code?: string })?.code ?? '')) {
       status = HttpStatus.CONFLICT;
       code = 'RESOURCE_ALREADY_EXISTS';
       title = 'A record with these unique details already exists';
