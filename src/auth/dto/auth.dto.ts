@@ -1,4 +1,4 @@
-import { IsBoolean, IsEmail, IsOptional, IsString, Length, Matches } from 'class-validator';
+import { IsBoolean, IsEmail, IsOptional, IsString, IsUUID, Length, Matches } from 'class-validator';
 import { IsIn } from 'class-validator'; import { PageQueryDto } from '../../common/page-query.dto';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 export class RequestOtpDto {
@@ -7,9 +7,9 @@ export class RequestOtpDto {
   email!: string;
 }
 export class VerifyOtpDto {
-  @ApiProperty({ description: 'The same email address used when requesting the code', example: 'tester@example.com', format: 'email' })
-  @IsEmail()
-  email!: string;
+  @ApiProperty({ description: 'Opaque challenge identifier returned by the OTP request endpoint', example: 'f17fdb48-05ec-44bf-b882-d480c90e0c91', format: 'uuid' })
+  @IsUUID()
+  challengeId!: string;
 
   @ApiProperty({ description: 'Six-digit verification code received by email', example: '123456', pattern: '^\\d{6}$', minLength: 6, maxLength: 6 })
   @Matches(/^\d{6}$/)
@@ -76,6 +76,7 @@ export class SessionQueryDto extends PageQueryDto { @IsIn(['createdAt','updatedA
 export class OtpChallengeResponseDto {
   @ApiProperty({ format: 'uuid', example: 'f17fdb48-05ec-44bf-b882-d480c90e0c91' }) challengeId!: string;
   @ApiProperty({ example: 600 }) expiresInSeconds!: number;
+  @ApiProperty({ example: 'If this email is eligible for registration, a verification code will be sent.' }) message!: string;
 }
 export class OtpVerifiedResponseDto {
   @ApiProperty({ example: true }) verified!: boolean;
