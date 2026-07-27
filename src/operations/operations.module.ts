@@ -8,12 +8,13 @@ import { EmailDeliveryService } from './email-delivery.service';
 import { OperationsController } from './operations.controller';
 import { OperationsService } from './operations.service';
 import { OutboxProcessorService } from './outbox-processor.service';
+import { ProfileImageStorageService } from './profile-image-storage.service';
 import { ReliabilityService } from './reliability.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([AuditLogEntity, NotificationEntity, OutboxMessageEntity, IdempotencyRecordEntity, UserEntity, OrganizationEntity,BackgroundJobEntity,VerificationCodeEntity])],
   controllers: [OperationsController],
-  providers: [OperationsService, ReliabilityService, EmailDeliveryService, ArtifactJobService,OutboxProcessorService],
+  providers: [OperationsService, ReliabilityService, EmailDeliveryService, ArtifactJobService,OutboxProcessorService,ProfileImageStorageService],
   exports: [OperationsService, ReliabilityService, EmailDeliveryService],
 })
 export class OperationsModule {}

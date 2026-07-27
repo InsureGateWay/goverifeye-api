@@ -49,3 +49,5 @@ npm run seed:vendor
 The local defaults are `vendor.demo@goverifeye.test` and `Vendor123!`. The seed also creates two active demonstration products for this vendor. Override the `SEED_VENDOR_*` values in `.env.local` when different test credentials or company details are required. The command is idempotent and should be run explicitly; it is not executed during application startup or production deployment.
 
 Product images use the Supabase bucket configured by `SUPABASE_PRODUCT_IMAGES_BUCKET` (default: `product-images`). Create this bucket as a public bucket so catalogue thumbnails can be displayed; uploads still require a short-lived signed upload URL issued by the authenticated backend.
+
+Profile photos use the public Supabase bucket configured by `SUPABASE_PROFILE_IMAGES_BUCKET` (default: `profile-images`). The persisted user record stores the resulting public URL; uploading or replacing a photo still requires an authenticated, short-lived signed upload URL.
