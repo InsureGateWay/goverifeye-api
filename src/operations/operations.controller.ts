@@ -1,8 +1,9 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common'; import { ApiBearerAuth, ApiTags } from '@nestjs/swagger'; import { CurrentUser, RequestContext } from '../common/request-context'; import { Roles, UserRole } from '../auth/authorization';
-import { AuditQueryDto, ChangePasswordDto, CreateProfileImageUploadDto, NotificationQueryDto, UpdateCompanyDto, UpdateProfileDto } from './operations.dto'; import { OperationsService } from './operations.service';
+import { AuditQueryDto, AuditSummaryQueryDto, ChangePasswordDto, CreateProfileImageUploadDto, NotificationQueryDto, UpdateCompanyDto, UpdateProfileDto } from './operations.dto'; import { OperationsService } from './operations.service';
 import { ProfileImageStorageService } from './profile-image-storage.service';
 @ApiBearerAuth() @ApiTags('operations') @Controller() export class OperationsController { constructor(private readonly service:OperationsService,private readonly profileImages:ProfileImageStorageService){}
  @Roles(UserRole.Admin) @Get('audit-logs') audit(@CurrentUser()u:RequestContext,@Query()q:AuditQueryDto){return this.service.listAudit(u.organizationId,q)}
+ @Roles(UserRole.Admin) @Get('audit-log-summary') auditSummary(@CurrentUser()u:RequestContext,@Query()q:AuditSummaryQueryDto){return this.service.auditSummary(u.organizationId,q)}
  @Get('notifications') notifications(@CurrentUser()u:RequestContext,@Query()q:NotificationQueryDto){return this.service.listNotifications(u.organizationId,u.userId,q)}
  @Get('notifications/unread-count') async unread(@CurrentUser()u:RequestContext){const page=await this.service.listNotifications(u.organizationId,u.userId,Object.assign(new NotificationQueryDto(),{read:false,page:1,pageSize:1}));return{unreadCount:page.meta.total}}
  @Post('notifications/:id/read') read(@CurrentUser()u:RequestContext,@Param('id')id:string){return this.service.markRead(u.organizationId,u.userId,id)}

@@ -33,7 +33,7 @@ export class CodesService {
 
       const batch = await manager.save(CodeBatchEntity, manager.create(CodeBatchEntity, {
         organizationId, clientRequestId, productId: product.id, generatedBy: actorId, labelType: input.labelType,
-        fulfillment: input.fulfillment, paperSize: input.paperSize, quantity: input.quantity,
+        fulfillment: input.fulfillment, paperSize: input.paperSize, logisticsService: input.logisticsService, quantity: input.quantity,
         status: BatchStatus.Generating,
       }));
 
