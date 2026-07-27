@@ -1,4 +1,5 @@
-import { IsEnum, IsIn, IsOptional, IsString, IsUrl, Length } from 'class-validator'; import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { IsEnum, IsIn, IsInt, IsOptional, IsString, IsUrl, Length, Max, Min } from 'class-validator'; import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import { PageQueryDto } from '../../common/page-query.dto';
 import { ProductStatus } from '../product.model';
 export class CreateProductDto {
@@ -11,3 +12,8 @@ export class CreateProductDto {
 }
 export class ProductQueryDto extends PageQueryDto { @IsOptional() @IsEnum(ProductStatus) status?: ProductStatus; @IsIn(['name','status','createdAt','updatedAt','totalCodes','scanned']) override sortBy='updatedAt'; }
 export class UpdateProductDto extends PartialType(CreateProductDto) {}
+export class CreateProductImageUploadDto {
+  @ApiProperty({example:'product.jpg'}) @IsString() @Length(1,200) fileName!:string;
+  @ApiProperty({enum:['image/png','image/jpeg'],example:'image/jpeg'}) @IsIn(['image/png','image/jpeg']) mimeType!:string;
+  @ApiProperty({example:524288,minimum:1,maximum:2097152}) @Type(()=>Number) @IsInt() @Min(1) @Max(2*1024*1024) size!:number;
+}

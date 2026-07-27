@@ -7,6 +7,8 @@ import { UserEntity } from '../auth/auth.entity'
 import { OrganizationEntity } from '../onboarding/onboarding.entity'
 import { TeamMemberEntity } from '../team/team.entity'
 import { TeamRole } from '../team/team.dto'
+import { ProductEntity } from '../products/product.entity'
+import { ProductStatus } from '../products/product.model'
 
 async function seedVendor() {
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] })
@@ -28,6 +30,7 @@ async function seedVendor() {
       const users = manager.getRepository(UserEntity)
       const organizations = manager.getRepository(OrganizationEntity)
       const members = manager.getRepository(TeamMemberEntity)
+      const products = manager.getRepository(ProductEntity)
       let user = await users.findOneBy({ email })
       let organization = user
         ? await organizations.findOneBy({ id: user.organizationId })
@@ -71,13 +74,37 @@ async function seedVendor() {
       }
       user = await users.save(user)
 
+      const seededProducts = [
+        {
+          name: 'Coca-Cola 33cl Bottle',
+          description: 'A 33cl bottled soft drink seeded for product and code-generation demonstrations.',
+          form: 'Liquid',
+          manufacturer: companyName,
+        },
+        {
+          name: 'ZigoCare Hand Sanitizer 500ml',
+          description: 'A 500ml alcohol-based hand sanitizer seeded for verification demonstrations.',
+          form: 'Gel',
+          manufacturer: companyName,
+        },
+      ]
+      for (const details of seededProducts) {
+        let product = await products.findOneBy({ organizationId: organization.id, name: details.name })
+        if (!product) product = products.create({ ...details, organizationId: organization.id, createdBy: user.id })
+        else Object.assign(product, details)
+        product.createdBy = user.id
+        product.status = ProductStatus.Active
+        product.rejectionReason = undefined
+        await products.save(product)
+      }
+
       let member = await members.findOneBy({ userId: user.id })
       if (!member) member = members.create({ organizationId: organization.id, userId: user.id, firstName, lastName, email, role: TeamRole.Admin, status: 'active' })
       else Object.assign(member, { organizationId: organization.id, firstName, lastName, email, role: TeamRole.Admin, status: 'active' })
       await members.save(member)
     })
 
-    console.log(`Activated seed vendor ready: ${email}`)
+    console.log(`Activated seed vendor and 2 active products ready: ${email}`)
   } finally {
     await app.close()
   }
