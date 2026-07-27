@@ -127,7 +127,8 @@ export class CodesService {
       const pairs=this.generateUniquePairs(inventory.quantity),rows=pairs.map(pair=>manager.create(VerificationCodeEntity,{organizationId:user.organizationId,productId:product.id,batchId:batch.id,code:pair.verificationCode,activationCodeHash:pair.activationCodeHash,status:VerificationCodeStatus.Active,activatedAt:new Date(),activatedBy:user.userId}));
       for(let start=0;start<rows.length;start+=1000)await manager.insert(VerificationCodeEntity,rows.slice(start,start+1000));
       product.totalCodes+=inventory.quantity;await manager.save(ProductEntity,product);claim.consumed=true;claim.attempts=candidate.attempts;await manager.save(OpenMarketClaimEntity,claim);inventory.status='claimed';inventory.claimedAt=new Date();inventory.claimedByOrganizationId=user.organizationId;inventory.claimedCodeBatchId=batch.id;await manager.save(OpenMarketBatchEntity,inventory);
-      return{batchId:batch.id,publicBatchId:inventory.publicBatchId,productId:product.id,activated:true}
+      const activatedBy=await manager.findOneBy(UserEntity,{id:user.userId,organizationId:user.organizationId});
+      return{batchId:batch.id,publicBatchId:inventory.publicBatchId,productId:product.id,productName:product.name,productUnit:product.form,labelType:inventory.labelType,quantity:inventory.quantity,activatedBy:[activatedBy?.firstName,activatedBy?.lastName].filter(Boolean).join(' ')||activatedBy?.email||'Vendor user',activatedByImageUrl:activatedBy?.profileImageUrl,activatedOn:inventory.claimedAt,activated:true}
     })
   }
   async getBatch(organizationId: string, id: string) {
