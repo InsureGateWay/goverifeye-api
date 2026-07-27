@@ -38,3 +38,12 @@ Readiness, Gmail, and storage configuration are documented in `docs/API_GAP_CLOS
 - Store uploads in object storage and persist only URLs plus metadata.
 - Use a transactional outbox for email/SMS, approval, and code-generation jobs.
 - Add rate limiting to authentication and public verification endpoints.
+# Seeded vendor
+
+Create or refresh an activated vendor for local testing:
+
+```bash
+npm run seed:vendor
+```
+
+The local defaults are `vendor.demo@goverifeye.test` and `Vendor123!`. Override the `SEED_VENDOR_*` values in `.env.local` when different test credentials or company details are required. The command is idempotent and should be run explicitly; it is not executed during application startup or production deployment.

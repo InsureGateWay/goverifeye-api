@@ -12,6 +12,7 @@
     "start:nest": "nest start",
     "start:prod": "node dist/main.js",
     "start:dev": "nest start --watch",
+    "seed:vendor": "ts-node src/database/seed-vendor.ts",
     "test": "jest",
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config test/jest-e2e.json",
