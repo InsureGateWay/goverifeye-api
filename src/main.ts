@@ -11,6 +11,7 @@ import { StructuredLoggerService } from './common/structured-logger.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
   app.useLogger(new StructuredLoggerService());
   const options = app.get(ConfigService).getOrThrow<AppOptions>('app');
   app.use(helmet());
