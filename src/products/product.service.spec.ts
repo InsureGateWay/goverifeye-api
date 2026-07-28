@@ -11,6 +11,16 @@ describe('ProductService', () => {
   it('archives an existing product', async () => {
     const product = { id: 'p1', organizationId: 'org-1', name: 'P', description: 'description', form: 'Tablet', manufacturer: 'M', status: ProductStatus.Active, totalCodes: 2, scanned: 0, suspicious: 0, createdBy: 'u1', createdAt: new Date(), updatedAt: new Date() };
     repository.findById.mockResolvedValue(product); repository.save.mockImplementation(async value => value);
-    expect((await service.archive('p1', 'org-1')).status).toBe(ProductStatus.Archived);
+    const archived=await service.archive('p1','org-1');expect(archived.status).toBe(ProductStatus.Archived);expect(archived.statusBeforeArchive).toBe(ProductStatus.Active);
+  });
+  it('restores the product to its pre-archive approval status',async()=>{
+    const product={id:'p1',organizationId:'org-1',name:'P',description:'description',form:'Tablet',manufacturer:'M',status:ProductStatus.Archived,statusBeforeArchive:ProductStatus.Rejected,totalCodes:0,scanned:0,suspicious:0,createdBy:'u1',createdAt:new Date(),updatedAt:new Date()};
+    repository.findById.mockResolvedValue(product);repository.save.mockImplementation(async value=>value);
+    expect((await service.restore('p1','org-1')).status).toBe(ProductStatus.Rejected);
+  });
+  it('returns a conflict instead of a server error for invalid lifecycle transitions',async()=>{
+    const product={id:'p1',organizationId:'org-1',name:'P',description:'description',form:'Tablet',manufacturer:'M',status:ProductStatus.Archived,totalCodes:0,scanned:0,suspicious:0,createdBy:'u1',createdAt:new Date(),updatedAt:new Date()};
+    repository.findById.mockResolvedValue(product);
+    await expect(service.update('p1','org-1',{name:'Changed'})).rejects.toMatchObject({code:'PRODUCT_STATE_INVALID',status:409});
   });
 });

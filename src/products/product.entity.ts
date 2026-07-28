@@ -6,6 +6,7 @@ export class ProductEntity extends BaseEntity {
   @Column({ length: 100 }) form!: string; @Column({ length: 150 }) manufacturer!: string;
   @Column({ nullable: true }) imageUrl?: string; @Column({ nullable: true }) verificationDocumentUrl?: string;
   @Column({ type: 'varchar', length: 20, default: ProductStatus.Pending }) status!: ProductStatus;
+  @Column({type:'varchar',length:20,nullable:true}) statusBeforeArchive?:ProductStatus|null;
   @Column('text', { nullable: true }) rejectionReason?: string; @Column({ default: 0 }) totalCodes!: number;
   @Column({ default: 0 }) scanned!: number; @Column({ default: 0 }) suspicious!: number; @Column('uuid') createdBy!: string;
 }
