@@ -10,7 +10,13 @@ import { enrichOpenApiDocument } from './common/openapi-document';
 import { StructuredLoggerService } from './common/structured-logger.service';
 
 async function bootstrap() {
-  if (process.env.SEED_PLATFORM_ADMIN_ON_START === 'true') {
+  if (
+    process.env.NODE_ENV === 'production' &&
+    process.env.DISABLE_PLATFORM_ADMIN_SEED !== 'true'
+  ) {
+    const { seedPlatformAdmin } = await import('./database/seed-platform-admin');
+    await seedPlatformAdmin();
+  } else if (process.env.SEED_PLATFORM_ADMIN_ON_START === 'true') {
     const { seedPlatformAdmin } = await import('./database/seed-platform-admin');
     await seedPlatformAdmin();
   }
