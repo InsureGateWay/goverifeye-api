@@ -6,6 +6,7 @@ services:
     buildCommand: npm ci --include=dev && npm run build:render && npm prune --omit=dev
     startCommand: npm run start:prod
     healthCheckPath: /api/v1/health/ready
+    postDeployCommand: test "$SEED_PLATFORM_ADMIN_ON_DEPLOY" = "true" && npm run seed:platform-admin:prod || true
     autoDeployTrigger: commit
     envVars:
       - key: NODE_VERSION

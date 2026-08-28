@@ -10,6 +10,11 @@ import { enrichOpenApiDocument } from './common/openapi-document';
 import { StructuredLoggerService } from './common/structured-logger.service';
 
 async function bootstrap() {
+  if (process.env.SEED_PLATFORM_ADMIN_ON_START === 'true') {
+    const { seedPlatformAdmin } = await import('./database/seed-platform-admin');
+    await seedPlatformAdmin();
+  }
+
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
   app.useLogger(new StructuredLoggerService());

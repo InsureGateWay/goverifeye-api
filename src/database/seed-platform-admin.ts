@@ -15,7 +15,7 @@ import { OrganizationEntity } from '../onboarding/onboarding.entity'
  *   SEED_PLATFORM_ADMIN_FIRST_NAME
  *   SEED_PLATFORM_ADMIN_LAST_NAME
  */
-async function seedPlatformAdmin() {
+export async function seedPlatformAdmin() {
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn'],
   })
@@ -119,4 +119,14 @@ async function seedPlatformAdmin() {
   }
 }
 
-void seedPlatformAdmin()
+const invokedDirectly =
+  require.main === module ||
+  process.argv.some((arg) => arg.includes('seed-platform-admin'))
+
+if (invokedDirectly) {
+  void seedPlatformAdmin().catch((error: unknown) => {
+    // eslint-disable-next-line no-console
+    console.error(error)
+    process.exitCode = 1
+  })
+}
