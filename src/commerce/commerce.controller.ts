@@ -8,8 +8,10 @@ import { toOrder } from '../common/page-query.dto';
 import { CurrentUser, RequestContext } from '../common/request-context';
 import { ReliabilityService } from '../operations/reliability.service';
 import { ProductEntity } from '../products/product.entity';
-import { CreateExportJobDto, CreatePaymentDto, CreateSupportTicketDto, JobQueryDto, QuoteDto, UpdateSupportTicketDto } from './commerce.dto'; import { Roles,UserRole } from '../auth/authorization';
+import { CreateExportJobDto, CreatePaymentDto, CreateSupportTicketDto, JobQueryDto, QuoteDto, UpdateCodePricingDto, UpdateSupportTicketDto } from './commerce.dto'; import { Roles,UserRole } from '../auth/authorization';
 import { BackgroundJobEntity, PaymentEntity, SupportTicketEntity } from './commerce.entity';
+import { PricingService } from './pricing.service';
+import { LabelType } from '../codes/code.enums';
 
 @ApiBearerAuth() @ApiTags('commerce') @Controller()
 export class CommerceController {
@@ -20,13 +22,26 @@ export class CommerceController {
     @InjectRepository(SupportTicketEntity) private readonly tickets: Repository<SupportTicketEntity>,
     private readonly reliability: ReliabilityService,
     private readonly db: DataSource,
+    private readonly pricing: PricingService,
   ) {}
 
   @Post('code-batch-quotes') async quote(@CurrentUser() user: RequestContext, @Body() dto: QuoteDto) {
     const product = await this.products.findOneBy({ id: dto.productId, organizationId: user.organizationId });
     if (!product) throw new DomainError('Product was not found', 'PRODUCT_NOT_FOUND', 404);
-    const unitPrice = dto.labelType === 'pair' ? 14.25 : 7.5;
-    return { productId: product.id, quantity: dto.quantity, labelType: dto.labelType, unitPrice, subtotal: Number((unitPrice * dto.quantity).toFixed(2)), currency: 'NGN', expiresAt: new Date(Date.now() + 15 * 60_000) };
+    const quote = await this.pricing.quote(dto.labelType, dto.quantity);
+    return { productId: product.id, ...quote };
+  }
+
+  @Get('platform/code-pricing') async listPricing() {
+    return this.pricing.list();
+  }
+
+  @Roles(UserRole.PlatformAdmin) @Patch('platform/code-pricing') async updatePricing(@CurrentUser() user: RequestContext, @Body() dto: UpdateCodePricingDto) {
+    return this.pricing.updatePrices({
+      ...(dto.micro !== undefined ? { [LabelType.Micro]: dto.micro } : {}),
+      ...(dto.main !== undefined ? { [LabelType.Main]: dto.main } : {}),
+      ...(dto.pair !== undefined ? { [LabelType.Pair]: dto.pair } : {}),
+    }, user.userId);
   }
 
   @Post('payments') payment(@CurrentUser() user: RequestContext, @Headers('idempotency-key') key: string | undefined, @Body() dto: CreatePaymentDto) {

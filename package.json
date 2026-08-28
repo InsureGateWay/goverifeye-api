@@ -13,6 +13,7 @@
     "start:prod": "node dist/main.js",
     "start:dev": "nest start --watch",
     "seed:vendor": "ts-node src/database/seed-vendor.ts",
+    "seed:platform-admin": "ts-node src/database/seed-platform-admin.ts",
     "seed:open-market": "ts-node src/database/seed-open-market-batches.ts",
     "test": "jest",
     "test:cov": "jest --coverage",

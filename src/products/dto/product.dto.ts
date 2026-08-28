@@ -17,3 +17,8 @@ export class CreateProductImageUploadDto {
   @ApiProperty({enum:['image/png','image/jpeg'],example:'image/jpeg'}) @IsIn(['image/png','image/jpeg']) mimeType!:string;
   @ApiProperty({example:524288,minimum:1,maximum:2097152}) @Type(()=>Number) @IsInt() @Min(1) @Max(2*1024*1024) size!:number;
 }
+export class CreateProductDocumentUploadDto {
+  @ApiProperty({example:'product-certificate.pdf'}) @IsString() @Length(1,200) fileName!:string;
+  @ApiProperty({enum:['application/pdf'],example:'application/pdf'}) @IsIn(['application/pdf']) mimeType!:string;
+  @ApiProperty({example:1048576,minimum:1,maximum:12582912}) @Type(()=>Number) @IsInt() @Min(1) @Max(12*1024*1024) size!:number;
+}

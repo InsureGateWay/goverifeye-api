@@ -20,6 +20,8 @@ describe('email templates', () => {
     expect(email.html).toContain('&lt;Alex&gt;');
     expect(email.html).not.toContain('Hi <Alex>');
     expect(email.html).toContain('token=abc&amp;source=email');
+    expect(email.html).toContain('#0b66c3');
+    expect(email.html).toContain('Vendor Admin');
     expect(email.text).toContain('https://portal.example/invite');
   });
 

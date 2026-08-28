@@ -1,7 +1,7 @@
 import { Controller,Get,Param,Query } from '@nestjs/common'; import { ApiBearerAuth,ApiTags } from '@nestjs/swagger'; import { CurrentUser,RequestContext } from '../common/request-context'; import { ReportingQueryDto } from './reporting.dto'; import { ReportingService } from './reporting.service';
 @ApiTags('reporting') @ApiBearerAuth() @Controller() export class ReportingController {constructor(private readonly service:ReportingService){}
- @Get('dashboard') dashboard(@CurrentUser()u:RequestContext,@Query('range')range='weekly'){return this.service.summary(u.organizationId,range)}
- @Get('reports') reports(@CurrentUser()u:RequestContext,@Query('range')range='weekly'){return this.service.report(u.organizationId,range)}
+ @Get('dashboard') dashboard(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.summary(u.organizationId,q)}
+ @Get('reports') reports(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.report(u.organizationId,q)}
  @Get('reports/top-products') top(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.topProducts(u.organizationId,q)}
  @Get('reports/suspicious-scans') suspicious(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.suspicious(u.organizationId,q)}
  @Get('reports/verification-events') events(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.events(u.organizationId,q)}

@@ -29,4 +29,16 @@ export class ProductImageStorageService {
     const { data:publicData } = this.storage.getPublicUrl(path)
     return { uploadUrl:data.signedUrl, path, publicUrl:publicData.publicUrl }
   }
+
+  async createDocumentUpload(organizationId:string, fileName:string) {
+    const extension = fileName.toLowerCase().endsWith('.pdf') ? 'pdf' : 'pdf'
+    const path = `organizations/${organizationId}/products/documents/${randomUUID()}.${extension}`
+    const { data, error } = await this.storage.createSignedUploadUrl(path, { upsert:false })
+    if (error) {
+      this.logger.error({ event:'product-document.signed-upload.failed', organizationId, reason:error.message })
+      throw new ServiceUnavailableException('Could not create a product document upload URL')
+    }
+    const { data:publicData } = this.storage.getPublicUrl(path)
+    return { uploadUrl:data.signedUrl, path, publicUrl:publicData.publicUrl }
+  }
 }
