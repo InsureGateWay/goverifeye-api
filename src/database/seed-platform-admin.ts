@@ -6,6 +6,8 @@ import { AppModule } from '../app.module'
 import { UserEntity } from '../auth/auth.entity'
 import { OrganizationEntity } from '../onboarding/onboarding.entity'
 import { ApplicationOptionEntity } from '../governance/governance.entity'
+import { EmailTemplateEntity, EmailTemplateHistoryEntity } from '../operations/email-template.entity'
+import { invitationEmail, passwordResetCodeEmail, vendorOnboardingSubmittedEmail, vendorVerifiedEmail, verificationCodeEmail } from '../operations/email-templates'
 
 /**
  * Seeds / promotes a platform_admin user for Admin Portal testing.
@@ -120,6 +122,23 @@ export async function seedPlatformAdmin() {
       for (const option of defaults) {
         if (await options.existsBy({ namespace: option.namespace, key: option.key })) continue
         await options.save(options.create({ ...option, organizationId:null, description:null, validation:{}, isActive:true, createdById:user.id, updatedById:user.id }))
+      }
+
+      const templateRepo=manager.getRepository(EmailTemplateEntity)
+      const templateHistory=manager.getRepository(EmailTemplateHistoryEntity)
+      const variables=(content:{subject:string;text:string;html:string})=>[...new Set([...content.subject.matchAll(/{{\s*([a-zA-Z][a-zA-Z0-9_.]*)\s*}}/g),...content.text.matchAll(/{{\s*([a-zA-Z][a-zA-Z0-9_.]*)\s*}}/g),...content.html.matchAll(/{{\s*([a-zA-Z][a-zA-Z0-9_.]*)\s*}}/g)].map((m)=>m[1]!))]
+      const rawTemplates=[
+        {key:'auth.registration_otp',name:'Registration verification code',audience:'security',description:'Sent when a prospective vendor verifies their registration email.',content:verificationCodeEmail('{{code}}','{{expiresInMinutes}}' as unknown as number)},
+        {key:'auth.open_market_otp',name:'Open-market claim verification code',audience:'security',description:'Sent to a vendor user while linking an open-market code batch.',content:verificationCodeEmail('{{code}}','{{expiresInMinutes}}' as unknown as number)},
+        {key:'auth.password_reset',name:'Password reset code',audience:'security',description:'Sent after a valid password-reset request.',content:passwordResetCodeEmail({firstName:'{{firstName}}',code:'{{code}}',expiresInMinutes:'{{expiresInMinutes}}' as unknown as number})},
+        {key:'team.invitation',name:'Team invitation',audience:'staff',description:'Sent for vendor and platform team invitations and resends.',content:invitationEmail({firstName:'{{firstName}}',role:'{{role}}',invitationUrl:'{{invitationUrl}}',expiresInDays:'{{expiresInDays}}' as unknown as number})},
+        {key:'vendor.onboarding_submitted',name:'Vendor onboarding submitted',audience:'vendor',description:'Confirms onboarding submission to the vendor administrator.',content:vendorOnboardingSubmittedEmail({firstName:'{{firstName}}',companyName:'{{companyName}}',dashboardUrl:'{{dashboardUrl}}',termsUrl:'{{termsUrl}}',userGuideUrl:'{{userGuideUrl}}',dataUsePolicyUrl:'{{dataUsePolicyUrl}}'})},
+        {key:'vendor.verified',name:'Vendor approved',audience:'vendor',description:'Sent when a platform administrator approves vendor onboarding.',content:vendorVerifiedEmail({firstName:'{{firstName}}',companyName:'{{companyName}}',dashboardUrl:'{{dashboardUrl}}',userGuideUrl:'{{userGuideUrl}}'})},
+      ]
+      for(const item of rawTemplates){
+        if(await templateRepo.existsBy({key:item.key,versionNumber:1}))continue
+        const row=await templateRepo.save(templateRepo.create({key:item.key,name:item.name,audience:item.audience,status:'active',versionNumber:1,subjectTemplate:item.content.subject,textTemplate:item.content.text,htmlTemplate:item.content.html,requiredVariables:variables(item.content),description:item.description,isSystem:true,activatedAt:new Date(),activatedById:user.id,createdById:user.id,updatedById:user.id}))
+        await templateHistory.save(templateHistory.create({templateId:row.id,key:row.key,action:'activate',snapshot:{key:row.key,name:row.name,audience:row.audience,status:row.status,versionNumber:row.versionNumber,subjectTemplate:row.subjectTemplate,textTemplate:row.textTemplate,htmlTemplate:row.htmlTemplate,requiredVariables:row.requiredVariables,description:row.description},reason:'Initial system template seed',createdById:user.id,updatedById:user.id}))
       }
     })
 

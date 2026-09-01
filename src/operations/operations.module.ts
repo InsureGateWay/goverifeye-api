@@ -9,12 +9,15 @@ import { OperationsController } from './operations.controller';
 import { OperationsService } from './operations.service';
 import { OutboxProcessorService } from './outbox-processor.service';
 import { ProfileImageStorageService } from './profile-image-storage.service';
+import { EmailTemplateEntity, EmailTemplateHistoryEntity } from './email-template.entity';
+import { EmailTemplateService } from './email-template.service';
+import { EmailTemplateController } from './email-template.controller';
 import { ReliabilityService } from './reliability.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([AuditLogEntity, NotificationEntity, OutboxMessageEntity, IdempotencyRecordEntity, UserEntity, OrganizationEntity,BackgroundJobEntity,VerificationCodeEntity])],
-  controllers: [OperationsController],
-  providers: [OperationsService, ReliabilityService, EmailDeliveryService, ArtifactJobService,OutboxProcessorService,ProfileImageStorageService],
-  exports: [OperationsService, ReliabilityService, EmailDeliveryService],
+  imports: [TypeOrmModule.forFeature([AuditLogEntity, NotificationEntity, OutboxMessageEntity, IdempotencyRecordEntity, UserEntity, OrganizationEntity,BackgroundJobEntity,VerificationCodeEntity,EmailTemplateEntity,EmailTemplateHistoryEntity])],
+  controllers: [OperationsController,EmailTemplateController],
+  providers: [OperationsService, ReliabilityService, EmailDeliveryService, EmailTemplateService,ArtifactJobService,OutboxProcessorService,ProfileImageStorageService],
+  exports: [OperationsService, ReliabilityService, EmailDeliveryService,EmailTemplateService],
 })
 export class OperationsModule {}

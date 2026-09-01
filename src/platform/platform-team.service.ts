@@ -7,6 +7,7 @@ import { DomainError } from '../common/domain-error';
 import { toOrder } from '../common/page-query.dto';
 import { OrganizationEntity } from '../onboarding/onboarding.entity';
 import { invitationEmail } from '../operations/email-templates';
+import { EmailTemplateService } from '../operations/email-template.service';
 import { ReliabilityService } from '../operations/reliability.service';
 import {
   InviteMemberDto,
@@ -23,6 +24,7 @@ export class PlatformTeamService {
   constructor(
     private readonly db: DataSource,
     private readonly reliability: ReliabilityService,
+    private readonly emailTemplates: EmailTemplateService,
   ) {}
 
   async resolvePlatformOrganizationId(): Promise<string> {
@@ -223,6 +225,8 @@ export class PlatformTeamService {
         }),
       );
       const link = `${process.env.APP_PUBLIC_URL ?? 'http://localhost:5173'}/first-time-register?token=${encodeURIComponent(token)}`;
+      const variables={firstName:row.firstName,role:row.role,invitationUrl:link,expiresInDays:7,resent:false};
+      const content=await this.emailTemplates.render(manager,'team.invitation',variables,()=>invitationEmail(variables));
       await this.reliability.enqueue(
         manager,
         'email.send',
@@ -230,12 +234,7 @@ export class PlatformTeamService {
         row.id,
         {
           to: row.email,
-          ...invitationEmail({
-            firstName: row.firstName,
-            role: row.role,
-            invitationUrl: link,
-            expiresInDays: 7,
-          }),
+          ...content,
         },
       );
       return row;
