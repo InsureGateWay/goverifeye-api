@@ -11,6 +11,18 @@ Production/demo API:
 - Liveness: `https://goverifeye-api.onrender.com/api/v1/health`
 - Readiness: `https://goverifeye-api.onrender.com/api/v1/health/ready`
 
+## Emergency platform-admin seed
+
+Configure a random secret of at least 32 characters as `PLATFORM_ADMIN_SEED_KEY` in Render. The endpoint reads the administrator email and password from the existing server-side `SEED_PLATFORM_ADMIN_*` variables; it never accepts or returns the password.
+
+```bash
+curl -X POST \
+  'https://goverifeye-api.onrender.com/api/v1/internal/platform-admin/seed' \
+  -H 'x-seed-key: YOUR_PLATFORM_ADMIN_SEED_KEY'
+```
+
+The endpoint is limited to three attempts per minute. Rotate or remove `PLATFORM_ADMIN_SEED_KEY` after use.
+
 The Render Free service sleeps after inactivity. The first request can take approximately one minute. Open the readiness URL and wait for HTTP 200 before starting a test session.
 
 ## Before testing
