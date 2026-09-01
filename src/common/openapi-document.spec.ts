@@ -27,7 +27,7 @@ describe('enrichOpenApiDocument', () => {
       401: expect.any(Object),
       403: expect.any(Object),
       429: expect.any(Object),
-      500: expect.any(Object),
+      503: expect.any(Object),
     }));
     expect(operation.responses['401']).toHaveProperty('content.application/problem+json.example.code', 'UNAUTHORIZED');
   });

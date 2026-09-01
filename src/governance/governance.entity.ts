@@ -93,6 +93,16 @@ export class AuditExceptionEntity extends AuditedEntity {
   @Column({ type: 'varchar', length: 24, default: 'open' }) status!: string;
   @Column({ type: 'text' }) title!: string;
   @Column({ type: 'text' }) details!: string;
+  @Column({ type: 'varchar', length: 24, default: 'control' }) kind!: string;
+  @Column({ type: 'text', nullable: true }) @Index() correlationId?: string | null;
+  @Column({ type: 'varchar', length: 12, nullable: true }) requestMethod?: string | null;
+  @Column({ type: 'text', nullable: true }) requestPath?: string | null;
+  @Column({ type: 'int', nullable: true }) originalStatus?: number | null;
+  @Column({ type: 'varchar', length: 100, nullable: true }) errorCode?: string | null;
+  @Column({ type: 'varchar', length: 200, nullable: true }) errorName?: string | null;
+  @Column({ type: 'text', nullable: true }) stackTrace?: string | null;
+  @Column('uuid', { nullable: true }) @Index() actorId?: string | null;
+  @Column({ type: 'jsonb', default: () => "'{}'::jsonb" }) metadata!: Record<string, unknown>;
   @Column({ type: 'text', nullable: true }) resolutionComment?: string | null;
   @Column({ type: 'jsonb', default: () => "'[]'::jsonb" }) evidence!: Array<{ fileName: string; url?: string }>;
   @Column('uuid', { nullable: true }) resolvedById?: string | null;

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDefined, IsEmail, IsIn, IsInt, IsObject, IsOptional, IsString, IsUUID, Length, Max, Min } from 'class-validator';
+import { IsBoolean, IsDefined, IsEmail, IsIn, IsInt, IsObject, IsOptional, IsString, IsUUID, Length, Max, MaxLength, Min } from 'class-validator';
 import { PageQueryDto } from '../common/page-query.dto';
 
 export class CreateChangeRequestDto {
@@ -56,8 +56,9 @@ export class AddCaseNoteDto {
   @IsOptional() evidence?: Array<{ fileName: string; url?: string }>;
 }
 export class AuditExceptionQueryDto extends PageQueryDto {
-  @IsOptional() @IsIn(['high', 'medium', 'low']) severity?: string;
-  @IsOptional() @IsIn(['open', 'closed']) status?: string;
+  @IsOptional() @IsString() @MaxLength(200) query?: string;
+  @IsOptional() @IsIn(['high', 'medium', 'low', 'all']) severity?: string;
+  @IsOptional() @IsIn(['open', 'closed', 'all']) status?: string;
   @IsIn(['createdAt', 'updatedAt', 'severity', 'status']) override sortBy = 'createdAt';
 }
 export class CreateAuditExceptionDto {

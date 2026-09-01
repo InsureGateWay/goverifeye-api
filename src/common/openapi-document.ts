@@ -67,7 +67,7 @@ export function enrichOpenApiDocument(document: OpenAPIObject): OpenAPIObject {
         operation.responses['403'] ??= problemResponse(403, 'Authenticated user lacks the required role', 'FORBIDDEN');
       }
       operation.responses['429'] ??= problemResponse(429, 'Request rate limit exceeded', 'RATE_LIMITED');
-      operation.responses['500'] ??= problemResponse(500, 'Unexpected server error', 'INTERNAL_ERROR');
+      operation.responses['503'] ??= problemResponse(503, 'Service temporarily unavailable', 'SERVICE_TEMPORARILY_UNAVAILABLE');
     }
   }
   return document;
