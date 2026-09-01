@@ -5,6 +5,7 @@ import * as argon2 from 'argon2'
 import { AppModule } from '../app.module'
 import { UserEntity } from '../auth/auth.entity'
 import { OrganizationEntity } from '../onboarding/onboarding.entity'
+import { ApplicationOptionEntity } from '../governance/governance.entity'
 
 /**
  * Seeds / promotes a platform_admin user for Admin Portal testing.
@@ -107,7 +108,19 @@ export async function seedPlatformAdmin() {
         user.role = 'platform_admin'
         user.isActive = true
       }
-      await users.save(user)
+      user = await users.save(user)
+
+      const options = manager.getRepository(ApplicationOptionEntity)
+      const defaults = [
+        ...['Pharmaceuticals','Food & Beverage','Cosmetics','Electronics','Automotive','Agriculture'].map((label,index)=>({namespace:'onboarding.industries',key:label.toLowerCase().replace(/[^a-z0-9]+/g,'_'),label,value:label,valueType:'string',isPublic:true,sortOrder:index})),
+        {namespace:'onboarding.countries',key:'NG',label:'Nigeria',value:{code:'NG',name:'Nigeria',dialCode:'+234'},valueType:'object',isPublic:true,sortOrder:0},
+        ...['Tablet','Capsule','Liquid','Powder','Device','Packaged Good'].map((label,index)=>({namespace:'products.forms',key:label.toLowerCase().replace(/[^a-z0-9]+/g,'_'),label,value:label,valueType:'string',isPublic:false,sortOrder:index})),
+        ...[{key:'micro',label:'Micro label',value:{code:'micro',fulfillment:['preprinted','selfprint']}},{key:'main',label:'Main label',value:{code:'main',fulfillment:['preprinted','selfprint']}},{key:'pair',label:'Paired labels',value:{code:'pair',fulfillment:['preprinted','selfprint']}}].map((row,index)=>({namespace:'codes.label_types',...row,valueType:'object',isPublic:false,sortOrder:index})),
+      ]
+      for (const option of defaults) {
+        if (await options.existsBy({ namespace: option.namespace, key: option.key })) continue
+        await options.save(options.create({ ...option, organizationId:null, description:null, validation:{}, isActive:true, createdById:user.id, updatedById:user.id }))
+      }
     })
 
     // eslint-disable-next-line no-console

@@ -1,9 +1,10 @@
-import { Controller, Get, Param, Query, Res } from '@nestjs/common';
+import { Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { Roles, UserRole } from '../auth/authorization';
 import { CodeQueryDto } from '../codes/code.dto';
 import { PlatformManageCodesService } from './platform-manage-codes.service';
+import { CurrentUser, RequestContext } from '../common/request-context';
 
 @ApiTags('platform-manage-codes')
 @ApiBearerAuth()
@@ -40,5 +41,10 @@ export class PlatformManageCodesController {
       'Content-Disposition': `attachment; filename="${filename}"`,
     });
     res.send(csv);
+  }
+
+  @Post('batches/:id/activate')
+  activateBatch(@CurrentUser() user: RequestContext, @Param('id') id: string) {
+    return this.service.activateBatch(id, user);
   }
 }

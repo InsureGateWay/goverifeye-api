@@ -26,6 +26,20 @@ export class CodesService {
     private readonly pricing: PricingService,
   ) {}
 
+  async exportCsv(organizationId: string, batchKey: string) {
+    const batchRepo = this.dataSource.getRepository(CodeBatchEntity);
+    const codeRepo = this.dataSource.getRepository(VerificationCodeEntity);
+    const batches = batchKey === 'all'
+      ? await batchRepo.find({ where: { organizationId }, order: { createdAt: 'DESC' } })
+      : await batchRepo.find({ where: [{ id: batchKey, organizationId }, { clientRequestId: batchKey, organizationId }] });
+    if (!batches.length && batchKey !== 'all') throw new DomainError('Batch was not found', 'BATCH_NOT_FOUND', 404);
+    const ids = batches.map((b) => b.id);
+    const rows = ids.length ? await codeRepo.find({ where: { organizationId, batchId: In(ids) }, order: { batchId: 'ASC', code: 'ASC' } }) : [];
+    const esc = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const csv = ['batchId,code,status,verificationCount,activatedAt,lastVerifiedAt', ...rows.map((r) => [r.batchId,r.code,r.status,r.verificationCount,r.activatedAt,r.lastVerifiedAt].map(esc).join(','))].join('\n');
+    return { csv, filename: batchKey === 'all' ? 'all-code-batches.csv' : `code-batch-${batchKey}.csv` };
+  }
+
   async generateBatch(organizationId: string, actorId: string, input: GenerateBatchDto,clientRequestId?:string) {
     if(!clientRequestId||clientRequestId.length<8||clientRequestId.length>128)throw new DomainError('A valid Idempotency-Key header is required','IDEMPOTENCY_KEY_REQUIRED',400);
     const prior=await this.dataSource.getRepository(CodeBatchEntity).findOneBy({organizationId,clientRequestId});if(prior)return{batch:prior,credentials:[],replayed:true,warning:'This request was already completed. Activation credentials are never returned again.'};

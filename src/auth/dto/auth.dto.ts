@@ -84,6 +84,7 @@ export class OtpVerifiedResponseDto {
   @ApiProperty({ example: 600 }) expiresInSeconds!: number;
 }
 export class TokenResponseDto { accessToken!: string; refreshToken!: string; tokenType!: string; expiresInSeconds!: number; }
+export class VerifyLoginMfaDto { @IsUUID() challengeId!:string; @Matches(/^\d{6}$/) code!:string; @IsOptional() @IsEmail() email?:string; }
 export class ActionResponseDto { loggedOut?: boolean; revoked?: boolean; }
 export class CurrentUserResponseDto { id!: string; email!: string; firstName!: string; lastName!: string; phone?: string; organizationId!: string; role!: string; }
 export class SessionResponseDto { id!: string; createdAt!: Date; updatedAt!: Date; expiresAt!: Date; revokedAt?: Date; current!: boolean; }

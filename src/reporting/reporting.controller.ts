@@ -1,7 +1,8 @@
-import { Controller,Get,Param,Query } from '@nestjs/common'; import { ApiBearerAuth,ApiTags } from '@nestjs/swagger'; import { CurrentUser,RequestContext } from '../common/request-context'; import { ReportingQueryDto } from './reporting.dto'; import { ReportingService } from './reporting.service';
+import { Controller,Get,Param,Query,Res } from '@nestjs/common'; import { ApiBearerAuth,ApiTags } from '@nestjs/swagger'; import { CurrentUser,RequestContext } from '../common/request-context'; import { ReportingQueryDto } from './reporting.dto'; import { ReportingService } from './reporting.service'; import type { Response } from 'express';
 @ApiTags('reporting') @ApiBearerAuth() @Controller() export class ReportingController {constructor(private readonly service:ReportingService){}
  @Get('dashboard') dashboard(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.summary(u.organizationId,q)}
  @Get('reports') reports(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.report(u.organizationId,q)}
+ @Get('reports/export') async export(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto,@Res()res:Response){const report=await this.service.report(u.organizationId,q);const esc=(v:unknown)=>`"${String(v??'').replace(/"/g,'""')}"`;const rows=Object.entries(report.metrics??{}).map(([k,v])=>[k,v].map(esc).join(','));res.attachment('vendor-report.csv').type('text/csv').send(['metric,value',...rows].join('\n'))}
  @Get('reports/top-products') top(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.topProducts(u.organizationId,q)}
  @Get('reports/suspicious-scans') suspicious(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.suspicious(u.organizationId,q)}
  @Get('reports/verification-events') events(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.events(u.organizationId,q)}

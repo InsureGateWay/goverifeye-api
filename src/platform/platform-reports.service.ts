@@ -224,4 +224,25 @@ export class PlatformReportsService {
       })),
     };
   }
+
+  async trend() {
+    const rows = await this.db
+      .getRepository(VerificationEventEntity)
+      .createQueryBuilder('event')
+      .select("TO_CHAR(DATE_TRUNC('day', event.createdAt), 'YYYY-MM-DD')", 'label')
+      .addSelect('COUNT(*)', 'scans')
+      .addSelect("SUM(CASE WHEN event.outcome = 'suspicious' THEN 1 ELSE 0 END)", 'suspicious')
+      .where("event.createdAt >= CURRENT_TIMESTAMP - INTERVAL '30 days'")
+      .groupBy("DATE_TRUNC('day', event.createdAt)")
+      .orderBy("DATE_TRUNC('day', event.createdAt)", 'ASC')
+      .getRawMany<{ label: string; scans: string; suspicious: string }>();
+    return { points: rows.map((row) => ({ label: row.label, scans: Number(row.scans), suspicious: Number(row.suspicious) })) };
+  }
+
+  async exportCsv() {
+    const report = await this.overview();
+    const esc = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const metrics = Object.entries(report.metrics).map(([key,value]) => [key,value].map(esc).join(','));
+    return ['metric,value', ...metrics].join('\n');
+  }
 }

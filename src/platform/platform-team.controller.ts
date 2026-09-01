@@ -6,12 +6,14 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Roles, UserRole } from '../auth/authorization';
 import { CurrentUser, RequestContext } from '../common/request-context';
 import { InviteMemberDto, TeamQueryDto, UpdateMemberDto } from '../team/team.dto';
 import { PlatformTeamService } from './platform-team.service';
+import type { Response } from 'express';
 
 @ApiTags('platform-team')
 @ApiBearerAuth()
@@ -28,6 +30,11 @@ export class PlatformTeamController {
   @Get('members')
   list(@Query() query: TeamQueryDto) {
     return this.service.list(query);
+  }
+
+  @Get('members/export')
+  async export(@Res() res: Response) {
+    res.attachment('platform-team-members.csv').type('text/csv').send(await this.service.exportCsv());
   }
 
   @Post('invites')

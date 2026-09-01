@@ -85,6 +85,13 @@ export class PlatformTeamService {
     };
   }
 
+  async exportCsv() {
+    const organizationId = await this.resolvePlatformOrganizationId();
+    const rows = await this.db.getRepository(TeamMemberEntity).find({ where: { organizationId }, order: { createdAt: 'DESC' } });
+    const esc = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    return ['firstName,lastName,email,role,status,createdAt', ...rows.map((r) => [r.firstName,r.lastName,r.email,r.role,r.status,r.createdAt].map(esc).join(','))].join('\n');
+  }
+
   async list(query: TeamQueryDto) {
     const orgId = await this.resolvePlatformOrganizationId();
     const members = this.db.getRepository(TeamMemberEntity);

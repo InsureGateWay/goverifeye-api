@@ -20,6 +20,8 @@ import {
 import { CodeQueryDto } from '../codes/code.dto';
 import { OrganizationEntity } from '../onboarding/onboarding.entity';
 import { ProductEntity } from '../products/product.entity';
+import { RequestContext } from '../common/request-context';
+import { AuditLogEntity } from '../operations/operations.entity';
 
 function formatBatchRef(batchId: string, createdAt?: Date | string): string {
   const digits = batchId.replace(/\D/g, '');
@@ -389,5 +391,25 @@ export class PlatformManageCodesService {
       csv,
       filename: `${batchRef}.csv`,
     };
+  }
+
+  async activateBatch(batchKey: string, user: RequestContext) {
+    const batch = await this.resolveBatch(batchKey);
+    return this.db.transaction(async (manager) => {
+      const now = new Date();
+      const result = await manager
+        .createQueryBuilder()
+        .update(VerificationCodeEntity)
+        .set({ status: VerificationCodeStatus.Active, activatedAt: now, activatedBy: user.userId })
+        .where('"batchId" = :batchId', { batchId: batch.id })
+        .andWhere('status = :status', { status: VerificationCodeStatus.Inactive })
+        .execute();
+      await manager.save(AuditLogEntity, manager.create(AuditLogEntity, {
+        organizationId: user.organizationId, actorId: user.userId,
+        action: 'platform.batch.activated', resourceType: 'code_batch', resourceId: batch.id,
+        status: 'success', metadata: { activatedCodes: result.affected ?? 0 },
+      }));
+      return { batchId: batch.id, activatedCodes: result.affected ?? 0, activatedAt: now };
+    });
   }
 }
