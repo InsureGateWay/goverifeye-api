@@ -83,7 +83,23 @@ export class OtpVerifiedResponseDto {
   @ApiProperty({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }) registrationToken!: string;
   @ApiProperty({ example: 600 }) expiresInSeconds!: number;
 }
-export class TokenResponseDto { accessToken!: string; refreshToken!: string; tokenType!: string; expiresInSeconds!: number; }
+export class AuthenticatedUserDto {
+  @ApiProperty({ format: 'uuid' }) id!: string;
+  @ApiProperty({ format: 'email' }) email!: string;
+  @ApiProperty() firstName!: string;
+  @ApiProperty() lastName!: string;
+  @ApiProperty({ format: 'uuid' }) organizationId!: string;
+  @ApiProperty({ example: 'platform_admin' }) role!: string;
+}
+export class TokenResponseDto {
+  @ApiProperty() accessToken!: string;
+  @ApiProperty() refreshToken!: string;
+  @ApiProperty({ example: 'Bearer' }) tokenType!: string;
+  @ApiProperty({ example: 900 }) expiresInSeconds!: number;
+  @ApiProperty({ example: 'platform_admin' }) role!: string;
+  @ApiProperty({ type: AuthenticatedUserDto }) user!: AuthenticatedUserDto;
+  @ApiPropertyOptional() rememberMe?: boolean;
+}
 export class VerifyLoginMfaDto { @IsUUID() challengeId!:string; @Matches(/^\d{6}$/) code!:string; @IsOptional() @IsEmail() email?:string; }
 export class ActionResponseDto { loggedOut?: boolean; revoked?: boolean; }
 export class CurrentUserResponseDto { id!: string; email!: string; firstName!: string; lastName!: string; phone?: string; organizationId!: string; role!: string; }
