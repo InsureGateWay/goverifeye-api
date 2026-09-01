@@ -17,6 +17,7 @@ import { invitationEmail, passwordResetCodeEmail, vendorOnboardingSubmittedEmail
  *   SEED_PLATFORM_ADMIN_PASSWORD
  *   SEED_PLATFORM_ADMIN_FIRST_NAME
  *   SEED_PLATFORM_ADMIN_LAST_NAME
+ *   SEED_PLATFORM_ADMIN_RESET_PASSWORD=true (explicitly rotate an existing account)
  */
 export async function seedPlatformAdmin() {
   const app = await NestFactory.createApplicationContext(AppModule, {
@@ -26,20 +27,20 @@ export async function seedPlatformAdmin() {
   try {
     const db = app.get(DataSource)
     const email = (
-      process.env.SEED_PLATFORM_ADMIN_EMAIL ?? 'admin.demo@goverifeye.test'
+      process.env.SEED_PLATFORM_ADMIN_EMAIL ?? 'senorleo12@yahoo.com'
     )
       .trim()
       .toLowerCase()
-    const password =
-      process.env.SEED_PLATFORM_ADMIN_PASSWORD ?? 'Admin123!'
+    const password = process.env.SEED_PLATFORM_ADMIN_PASSWORD?.trim()
     const firstName = (
-      process.env.SEED_PLATFORM_ADMIN_FIRST_NAME ?? 'Platform'
+      process.env.SEED_PLATFORM_ADMIN_FIRST_NAME ?? 'Super'
     ).trim()
     const lastName = (
       process.env.SEED_PLATFORM_ADMIN_LAST_NAME ?? 'Admin'
     ).trim()
 
     if (
+      !password ||
       password.length < 6 ||
       !/[a-z]/.test(password) ||
       !/[A-Z]/.test(password) ||
@@ -88,11 +89,10 @@ export async function seedPlatformAdmin() {
         organization = await organizations.save(organization)
       }
 
-      const passwordHash = await argon2.hash(password, {
-        type: argon2.argon2id,
-      })
-
       if (!user) {
+        const passwordHash = await argon2.hash(password, {
+          type: argon2.argon2id,
+        })
         user = users.create({
           email,
           passwordHash,
@@ -103,7 +103,11 @@ export async function seedPlatformAdmin() {
           isActive: true,
         })
       } else {
-        user.passwordHash = passwordHash
+        if (process.env.SEED_PLATFORM_ADMIN_RESET_PASSWORD === 'true') {
+          user.passwordHash = await argon2.hash(password, {
+            type: argon2.argon2id,
+          })
+        }
         user.firstName = firstName
         user.lastName = lastName
         user.organizationId = organization.id
@@ -144,7 +148,7 @@ export async function seedPlatformAdmin() {
 
     // eslint-disable-next-line no-console
     console.log(
-      `Platform admin ready: ${email} / (password from SEED_PLATFORM_ADMIN_PASSWORD or Admin123!)`,
+      `Platform admin ready: ${email} / password supplied through SEED_PLATFORM_ADMIN_PASSWORD`,
     )
   } finally {
     await app.close()
