@@ -1,11 +1,11 @@
-import { MigrationInterface, QueryRunner, TableColumn } from 'typeorm';
+import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class MakeVerificationCodeLengthConfigurable1724700000000 implements MigrationInterface {
   async up(query: QueryRunner) {
-    await query.changeColumn('verification_codes', 'code', new TableColumn({ name: 'code', type: 'varchar', length: '32', isNullable: false }));
+    await query.query('ALTER TABLE "verification_codes" ALTER COLUMN "code" TYPE varchar(32)');
   }
 
   async down(query: QueryRunner) {
-    await query.changeColumn('verification_codes', 'code', new TableColumn({ name: 'code', type: 'varchar', length: '16', isNullable: false }));
+    await query.query('ALTER TABLE "verification_codes" ALTER COLUMN "code" TYPE varchar(16)');
   }
 }
