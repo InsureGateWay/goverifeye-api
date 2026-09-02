@@ -5,5 +5,5 @@ import { ProductService } from './product.service';
 import { ProductImageStorageService } from './product-image-storage.service';
 import { ProductEntity } from './product.entity'; import { TypeOrmProductRepository } from './typeorm-product.repository';
 import { UserEntity } from '../auth/auth.entity';
-@Module({ imports: [TypeOrmModule.forFeature([ProductEntity,UserEntity])], controllers: [ProductController], providers: [ProductService,ProductImageStorageService, { provide: PRODUCT_REPOSITORY, useClass: TypeOrmProductRepository }], exports: [ProductService] })
+@Module({ imports: [TypeOrmModule.forFeature([ProductEntity,UserEntity])], controllers: [ProductController], providers: [ProductService,ProductImageStorageService, { provide: PRODUCT_REPOSITORY, useClass: TypeOrmProductRepository }], exports: [ProductService,ProductImageStorageService] })
 export class ProductModule {}

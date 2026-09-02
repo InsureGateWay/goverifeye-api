@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDefined, IsEmail, IsIn, IsInt, IsObject, IsOptional, IsString, IsUUID, Length, Max, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsDefined, IsEmail, IsIn, IsInt, IsObject, IsOptional, IsString, IsUrl, IsUUID, Length, Max, MaxLength, Min } from 'class-validator';
 import { PageQueryDto } from '../common/page-query.dto';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -117,4 +117,7 @@ export class UpdateOptionDto {
   @IsOptional() @IsBoolean() isActive?:boolean;
   @IsOptional() @Type(()=>Number) @IsInt() sortOrder?:number;
   @IsString() @Length(1,1000) reason!:string;
+}
+export class SetVendorLogoDto {
+  @IsUrl() logoUrl!: string;
 }

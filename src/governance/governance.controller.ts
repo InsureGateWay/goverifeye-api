@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, Param, Patch, Post, Query, Res, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, Res, UploadedFiles, UseInterceptors } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
@@ -10,11 +10,11 @@ import {
   ExportQueryDto, FraudCaseQueryDto, InviteVendorDto, MfaCodeDto,
   MfaDisableDto, PlatformProductQueryDto, PlatformProductStatusDto,
   ResolveAuditExceptionDto, UpdateFraudCaseDto, UpdateIncidentDto,
-  VendorLifecycleDto, ReviewChangeRequestDto, ChangeRequestQueryDto, OptionQueryDto, CreateOptionDto, UpdateOptionDto,
+  VendorLifecycleDto, ReviewChangeRequestDto, ChangeRequestQueryDto, OptionQueryDto, CreateOptionDto, UpdateOptionDto, SetVendorLogoDto,
 } from './governance.dto';
 import { GovernanceService, UploadedVendorFile } from './governance.service';
 import { Public } from '../auth/public.decorator';
-import { CreateProductDto } from '../products/dto/product.dto';
+import { CreateProductDocumentUploadDto, CreateProductDto, CreateProductImageUploadDto } from '../products/dto/product.dto';
 
 @ApiBearerAuth() @ApiTags('governance') @Controller()
 export class GovernanceController {
@@ -42,9 +42,17 @@ export class GovernanceController {
   @Roles(UserRole.SuperAdmin) @Get('platform/products/:id') product(@Param('id')id:string){return this.service.product(id);}
   @Roles(UserRole.SuperAdmin) @Patch('platform/products/:id/status') productStatus(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:PlatformProductStatusDto){return this.service.setProductStatus(u,id,dto.status,dto.reason);}
   @Roles(UserRole.SuperAdmin) @Patch('platform/products/:id/archive') archiveProduct(@CurrentUser()u:RequestContext,@Param('id')id:string){return this.service.setProductStatus(u,id,'archived');}
+  @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:vendorId/products/image-upload') createProductImageUploadForVendor(@Param('vendorId')vendorId:string,@Body()dto:CreateProductImageUploadDto){return this.service.createProductImageUploadForVendor(vendorId,dto.fileName);}
+  @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:vendorId/products/document-upload') createProductDocumentUploadForVendor(@Param('vendorId')vendorId:string,@Body()dto:CreateProductDocumentUploadDto){return this.service.createProductDocumentUploadForVendor(vendorId,dto.fileName);}
+  @Roles(UserRole.SuperAdmin) @Delete('platform/vendors/:vendorId/products/:productId/image') deleteProductImageForVendor(@CurrentUser()u:RequestContext,@Param('vendorId')vendorId:string,@Param('productId')productId:string){return this.service.deleteProductImageForVendor(u,vendorId,productId);}
+  @Roles(UserRole.SuperAdmin) @Delete('platform/vendors/:vendorId/products/:productId/document') deleteProductDocumentForVendor(@CurrentUser()u:RequestContext,@Param('vendorId')vendorId:string,@Param('productId')productId:string){return this.service.deleteProductDocumentForVendor(u,vendorId,productId);}
   @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:vendorId/products') createProductForVendor(@CurrentUser()u:RequestContext,@Param('vendorId')vendorId:string,@Body()dto:CreateProductDto){return this.service.createProductForVendor(u,vendorId,dto);}
 
   @Roles(UserRole.SuperAdmin) @Post('platform/vendors/invites') @UseInterceptors(FileFieldsInterceptor([{name:'cac',maxCount:1},{name:'tax',maxCount:1},{name:'other',maxCount:1}],{limits:{fileSize:5*1024*1024,files:3}})) inviteVendor(@CurrentUser()u:RequestContext,@Body()dto:InviteVendorDto,@UploadedFiles()files?:Record<string,UploadedVendorFile[]>){return this.service.inviteVendor(u,dto,files);}
+  @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:vendorId/image-upload') createVendorLogoUpload(@Param('vendorId')vendorId:string,@Body()dto:CreateProductImageUploadDto){return this.service.createVendorLogoUpload(vendorId,dto.fileName);}
+  @Roles(UserRole.SuperAdmin) @Patch('platform/vendors/:vendorId/image') setVendorLogo(@CurrentUser()u:RequestContext,@Param('vendorId')vendorId:string,@Body()dto:SetVendorLogoDto){return this.service.setVendorLogo(u,vendorId,dto.logoUrl);}
+  @Roles(UserRole.SuperAdmin) @Delete('platform/vendors/:vendorId/image') deleteVendorLogo(@CurrentUser()u:RequestContext,@Param('vendorId')vendorId:string){return this.service.deleteVendorLogo(u,vendorId);}
+  @Roles(UserRole.SuperAdmin) @Delete('platform/vendors/:vendorId/documents/:documentId') deleteVendorDocument(@CurrentUser()u:RequestContext,@Param('vendorId')vendorId:string,@Param('documentId')documentId:string){return this.service.deleteVendorDocument(u,vendorId,documentId);}
   @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:id/deactivate') deactivateVendor(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:VendorLifecycleDto){return this.service.vendorLifecycle(u,id,'deactivated',dto);}
   @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:id/reactivate') reactivateVendor(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:VendorLifecycleDto){return this.service.vendorLifecycle(u,id,'approved',dto);}
 

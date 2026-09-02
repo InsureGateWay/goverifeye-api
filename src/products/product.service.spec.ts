@@ -1,7 +1,8 @@
 import { ProductStatus } from './product.model'; import { ProductRepository } from './product.repository'; import { ProductService } from './product.service';
 describe('ProductService', () => {
   const repository: jest.Mocked<ProductRepository> = { find: jest.fn(), findById: jest.fn(), save: jest.fn(), delete: jest.fn() };
-  const service = new ProductService(repository);
+  const images = { removeProductImage: jest.fn(), removeProductDocument: jest.fn() };
+  const service = new ProductService(repository, images as never);
   beforeEach(() => jest.clearAllMocks());
   it('creates a pending product scoped to its organization', async () => {
     repository.save.mockImplementation(async product => product);
@@ -22,5 +23,19 @@ describe('ProductService', () => {
     const product={id:'p1',organizationId:'org-1',name:'P',description:'description',form:'Tablet',manufacturer:'M',status:ProductStatus.Archived,totalCodes:0,scanned:0,suspicious:0,createdBy:'u1',createdAt:new Date(),updatedAt:new Date()};
     repository.findById.mockResolvedValue(product);
     await expect(service.update('p1','org-1',{name:'Changed'})).rejects.toMatchObject({code:'PRODUCT_STATE_INVALID',status:409});
+  });
+  it('deletes the organization-owned image and clears its product reference',async()=>{
+    const product={id:'p1',organizationId:'org-1',name:'P',description:'description',form:'Tablet',manufacturer:'M',imageUrl:'https://project.supabase.co/storage/v1/object/public/product-images/organizations/org-1/products/image.jpg',status:ProductStatus.Pending,totalCodes:0,scanned:0,suspicious:0,createdBy:'u1',createdAt:new Date(),updatedAt:new Date()};
+    repository.findById.mockResolvedValue(product);repository.save.mockImplementation(async value=>value);images.removeProductImage.mockResolvedValue(undefined);
+    await expect(service.deleteImage('p1','org-1')).resolves.toEqual({deleted:true});
+    expect(images.removeProductImage).toHaveBeenCalledWith('org-1',product.imageUrl);
+    expect(repository.save).toHaveBeenCalledWith(expect.objectContaining({id:'p1',imageUrl:null}));
+  });
+  it('deletes the organization-owned verification document and clears its product reference',async()=>{
+    const product={id:'p1',organizationId:'org-1',name:'P',description:'description',form:'Tablet',manufacturer:'M',verificationDocumentUrl:'https://project.supabase.co/storage/v1/object/public/product-images/organizations/org-1/products/documents/document.pdf',status:ProductStatus.Pending,totalCodes:0,scanned:0,suspicious:0,createdBy:'u1',createdAt:new Date(),updatedAt:new Date()};
+    repository.findById.mockResolvedValue(product);repository.save.mockImplementation(async value=>value);images.removeProductDocument.mockResolvedValue(undefined);
+    await expect(service.deleteDocument('p1','org-1')).resolves.toEqual({deleted:true});
+    expect(images.removeProductDocument).toHaveBeenCalledWith('org-1',product.verificationDocumentUrl);
+    expect(repository.save).toHaveBeenCalledWith(expect.objectContaining({id:'p1',verificationDocumentUrl:null}));
   });
 });

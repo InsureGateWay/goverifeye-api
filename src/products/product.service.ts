@@ -5,9 +5,10 @@ import { CreateProductDto, ProductQueryDto, UpdateProductDto } from './dto/produ
 import { Product, ProductStatus } from './product.model';
 import { PRODUCT_REPOSITORY, ProductRepository } from './product.repository';
 import { DomainError } from '../common/domain-error';
+import { ProductImageStorageService } from './product-image-storage.service';
 @Injectable()
 export class ProductService {
-  constructor(@Inject(PRODUCT_REPOSITORY) private readonly products: ProductRepository) {}
+  constructor(@Inject(PRODUCT_REPOSITORY) private readonly products: ProductRepository, private readonly images: ProductImageStorageService) {}
   list(organizationId: string, query: ProductQueryDto) { return this.products.find({ organizationId, ...query }); }
   async create(organizationId: string, actorId: string, dto: CreateProductDto) {
     const now = new Date();
@@ -26,4 +27,18 @@ export class ProductService {
   async restore(id: string, organizationId: string) { const product = await this.get(id, organizationId);if(product.status!==ProductStatus.Archived)throw new DomainError('Only archived products can be restored','PRODUCT_STATE_INVALID',409);const restoredStatus=product.statusBeforeArchive&&product.statusBeforeArchive!==ProductStatus.Archived?product.statusBeforeArchive:ProductStatus.Pending; return this.products.save({ ...product, status:restoredStatus,statusBeforeArchive:null, updatedAt: new Date() }); }
   async resubmit(id: string, organizationId: string, dto: UpdateProductDto) { const product = await this.get(id, organizationId); if (product.status !== ProductStatus.Rejected) throw new DomainError('Only rejected products can be resubmitted','PRODUCT_STATE_INVALID',409); return this.products.save({ ...product, ...dto, status: ProductStatus.Pending, rejectionReason: undefined, updatedAt: new Date() }); }
   async delete(id: string, organizationId: string) { const product = await this.get(id, organizationId); if (product.totalCodes > 0) throw new DomainError('Products with generated codes cannot be deleted','PRODUCT_HAS_CODES',409); await this.products.delete(id, organizationId); return { deleted: true }; }
+  async deleteImage(id: string, organizationId: string) {
+    const product = await this.get(id, organizationId);
+    if (!product.imageUrl) throw new DomainError('The product does not have an image', 'PRODUCT_IMAGE_NOT_FOUND', 404);
+    await this.images.removeProductImage(organizationId, product.imageUrl);
+    await this.products.save({ ...product, imageUrl: null, updatedAt: new Date() });
+    return { deleted: true };
+  }
+  async deleteDocument(id: string, organizationId: string) {
+    const product = await this.get(id, organizationId);
+    if (!product.verificationDocumentUrl) throw new DomainError('The product does not have a verification document', 'PRODUCT_DOCUMENT_NOT_FOUND', 404);
+    await this.images.removeProductDocument(organizationId, product.verificationDocumentUrl);
+    await this.products.save({ ...product, verificationDocumentUrl: null, updatedAt: new Date() });
+    return { deleted: true };
+  }
 }

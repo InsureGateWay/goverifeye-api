@@ -15,6 +15,7 @@ import { ProductEntity } from '../products/product.entity';
 import { ProductStatus } from '../products/product.model';
 import { CreateProductDto } from '../products/dto/product.dto';
 import { ProductService } from '../products/product.service';
+import { ProductImageStorageService } from '../products/product-image-storage.service';
 import { DocumentStorageService } from '../onboarding/document-storage.service';
 import { DocumentSecurityService } from '../onboarding/document-security.service';
 import { MalwareScannerService } from '../onboarding/malware-scanner.service';
@@ -68,7 +69,7 @@ export type UploadedVendorFile = { buffer: Buffer; size: number; mimetype: strin
 
 @Injectable()
 export class GovernanceService {
-  constructor(private readonly db: DataSource, private readonly config: ConfigService, private readonly documents: DocumentStorageService, private readonly documentSecurity: DocumentSecurityService, private readonly malware: MalwareScannerService, private readonly reliability: ReliabilityService, private readonly emailTemplates: EmailTemplateService, private readonly productService: ProductService) {}
+  constructor(private readonly db: DataSource, private readonly config: ConfigService, private readonly documents: DocumentStorageService, private readonly documentSecurity: DocumentSecurityService, private readonly malware: MalwareScannerService, private readonly reliability: ReliabilityService, private readonly emailTemplates: EmailTemplateService, private readonly productService: ProductService, private readonly productImages: ProductImageStorageService) {}
   private audit<T extends object>(u: RequestContext, data: T): T & { createdById: string; updatedById: string } {
     return { ...data, createdById: u.userId, updatedById: u.userId };
   }
@@ -149,12 +150,73 @@ export class GovernanceService {
     return { ...row, vendor: org?.companyName ?? 'Organization', vendorId: row.organizationId, codes: row.totalCodes, scans: row.scanned };
   }
   async createProductForVendor(u: RequestContext, vendorId: string, dto: CreateProductDto) {
-    const organization = await this.db.getRepository(OrganizationEntity).findOneBy({ id: vendorId });
-    if (!organization) throw new DomainError('Vendor was not found', 'VENDOR_NOT_FOUND', 404);
-    if (organization.status !== 'approved') throw new DomainError('The vendor account must be approved before products can be created', 'ACCOUNT_NOT_ACTIVATED', 403);
+    await this.approvedVendor(vendorId);
     const product = await this.productService.create(vendorId, u.userId, dto);
     await this.writeAudit(u, 'platform.product.created_for_vendor', 'product', product.id, { vendorId });
     return product;
+  }
+  async createProductImageUploadForVendor(vendorId: string, fileName: string) {
+    await this.approvedVendor(vendorId);
+    return this.productImages.createUpload(vendorId, fileName);
+  }
+  async createProductDocumentUploadForVendor(vendorId: string, fileName: string) {
+    await this.approvedVendor(vendorId);
+    return this.productImages.createDocumentUpload(vendorId, fileName);
+  }
+  async deleteProductImageForVendor(u: RequestContext, vendorId: string, productId: string) {
+    await this.vendor(vendorId);
+    const result = await this.productService.deleteImage(productId, vendorId);
+    await this.writeAudit(u, 'platform.product.image_deleted_for_vendor', 'product', productId, { vendorId });
+    return result;
+  }
+  async deleteProductDocumentForVendor(u: RequestContext, vendorId: string, productId: string) {
+    await this.vendor(vendorId);
+    const result = await this.productService.deleteDocument(productId, vendorId);
+    await this.writeAudit(u, 'platform.product.document_deleted_for_vendor', 'product', productId, { vendorId });
+    return result;
+  }
+  async deleteVendorDocument(u: RequestContext, vendorId: string, documentId: string) {
+    await this.vendor(vendorId);
+    const repository = this.db.getRepository(OrganizationDocumentEntity);
+    const document = await repository.findOneBy({ id: documentId, organizationId: vendorId });
+    if (!document) throw new DomainError('Vendor document was not found', 'DOCUMENT_NOT_FOUND', 404);
+    await this.documents.remove(document.storageKey);
+    await repository.delete({ id: documentId, organizationId: vendorId });
+    await this.writeAudit(u, 'platform.vendor.document_deleted', 'organization_document', documentId, { vendorId, type: document.type, fileName: document.fileName });
+    return { deleted: true };
+  }
+  async createVendorLogoUpload(vendorId: string, fileName: string) {
+    await this.vendor(vendorId);
+    return this.productImages.createVendorLogoUpload(vendorId, fileName);
+  }
+  async setVendorLogo(u: RequestContext, vendorId: string, logoUrl: string) {
+    const organization = await this.vendor(vendorId);
+    this.productImages.assertVendorLogo(vendorId, logoUrl);
+    const previousLogoUrl = organization.logoUrl;
+    organization.logoUrl = logoUrl;
+    const saved = await this.db.getRepository(OrganizationEntity).save(organization);
+    if (previousLogoUrl && previousLogoUrl !== logoUrl) await this.productImages.removeVendorLogo(vendorId, previousLogoUrl);
+    await this.writeAudit(u, 'platform.vendor.logo_updated', 'organization', vendorId, {});
+    return saved;
+  }
+  async deleteVendorLogo(u: RequestContext, vendorId: string) {
+    const organization = await this.vendor(vendorId);
+    if (!organization.logoUrl) throw new DomainError('The vendor does not have a company image', 'VENDOR_LOGO_NOT_FOUND', 404);
+    await this.productImages.removeVendorLogo(vendorId, organization.logoUrl);
+    organization.logoUrl = null;
+    const saved = await this.db.getRepository(OrganizationEntity).save(organization);
+    await this.writeAudit(u, 'platform.vendor.logo_deleted', 'organization', vendorId, {});
+    return { deleted: true, vendor: saved };
+  }
+  private async approvedVendor(vendorId: string) {
+    const organization = await this.vendor(vendorId);
+    if (organization.status !== 'approved') throw new DomainError('The vendor account must be approved before products can be created', 'ACCOUNT_NOT_ACTIVATED', 403);
+    return organization;
+  }
+  private async vendor(vendorId: string) {
+    const organization = await this.db.getRepository(OrganizationEntity).findOneBy({ id: vendorId });
+    if (!organization) throw new DomainError('Vendor was not found', 'VENDOR_NOT_FOUND', 404);
+    return organization;
   }
   async setProductStatus(u: RequestContext, id: string, status: string, reason?: string) {
     const repo = this.db.getRepository(ProductEntity), row = await repo.findOneBy({ id });
