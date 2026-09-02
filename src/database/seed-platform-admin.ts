@@ -10,7 +10,7 @@ import { EmailTemplateEntity, EmailTemplateHistoryEntity } from '../operations/e
 import { invitationEmail, passwordResetCodeEmail, vendorOnboardingSubmittedEmail, vendorVerifiedEmail, verificationCodeEmail } from '../operations/email-templates'
 
 /**
- * Seeds / promotes a super_admin user for Admin Portal testing.
+ * Seeds / promotes the platform super_admin users for Admin Portal testing.
  *
  * Env overrides:
  *   SEED_PLATFORM_ADMIN_EMAIL
@@ -89,10 +89,11 @@ export async function seedPlatformAdmin() {
         organization = await organizations.save(organization)
       }
 
+      const passwordHash = await argon2.hash(password, {
+        type: argon2.argon2id,
+      })
+
       if (!user) {
-        const passwordHash = await argon2.hash(password, {
-          type: argon2.argon2id,
-        })
         user = users.create({
           email,
           passwordHash,
@@ -104,9 +105,7 @@ export async function seedPlatformAdmin() {
         })
       } else {
         if (process.env.SEED_PLATFORM_ADMIN_RESET_PASSWORD === 'true') {
-          user.passwordHash = await argon2.hash(password, {
-            type: argon2.argon2id,
-          })
+          user.passwordHash = passwordHash
         }
         user.firstName = firstName
         user.lastName = lastName
@@ -115,6 +114,28 @@ export async function seedPlatformAdmin() {
         user.isActive = true
       }
       user = await users.save(user)
+
+      const secondaryEmail = 'chelseahart234@gmail.com'
+      let secondaryUser = await users.findOneBy({ email: secondaryEmail })
+      if (!secondaryUser) {
+        secondaryUser = users.create({
+          email: secondaryEmail,
+          passwordHash: user.passwordHash,
+          firstName: 'Chelsea',
+          lastName: 'Hart',
+          organizationId: organization.id,
+          role: 'super_admin',
+          isActive: true,
+        })
+      } else {
+        secondaryUser.passwordHash = user.passwordHash
+        secondaryUser.firstName = 'Chelsea'
+        secondaryUser.lastName = 'Hart'
+        secondaryUser.organizationId = organization.id
+        secondaryUser.role = 'super_admin'
+        secondaryUser.isActive = true
+      }
+      await users.save(secondaryUser)
 
       const options = manager.getRepository(ApplicationOptionEntity)
       const defaults = [
