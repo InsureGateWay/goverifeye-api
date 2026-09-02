@@ -6,7 +6,7 @@ import { Brackets, DataSource, ILike, In, IsNull } from 'typeorm';
 import { UserEntity } from '../auth/auth.entity';
 import { pageOf } from '../common/api-response';
 import { DomainError } from '../common/domain-error';
-import { RequestContext } from '../common/request-context';
+import { RequestContext, submittedBy } from '../common/request-context';
 import { toOrder } from '../common/page-query.dto';
 import { VerificationEventEntity } from '../codes/code.entity';
 import { OrganizationDocumentEntity, OrganizationEntity } from '../onboarding/onboarding.entity';
@@ -151,7 +151,7 @@ export class GovernanceService {
   }
   async createProductForVendor(u: RequestContext, vendorId: string, dto: CreateProductDto) {
     await this.approvedVendor(vendorId);
-    const product = await this.productService.create(vendorId, u.userId, dto);
+    const product = await this.productService.create(vendorId, u, dto);
     await this.writeAudit(u, 'platform.product.created_for_vendor', 'product', product.id, { vendorId });
     return product;
   }
@@ -221,7 +221,7 @@ export class GovernanceService {
   async setProductStatus(u: RequestContext, id: string, status: string, reason?: string) {
     const repo = this.db.getRepository(ProductEntity), row = await repo.findOneBy({ id });
     if (!row) throw new DomainError('Product was not found', 'PRODUCT_NOT_FOUND', 404);
-    row.status = status as ProductStatus; row.rejectionReason = status === 'rejected' ? reason : undefined; row.updatedAt = new Date();
+    row.status = status as ProductStatus; row.rejectionReason = status === 'rejected' ? reason : undefined; if(status==='active')row.approvedBy=submittedBy(u); row.updatedAt = new Date();
     const saved = await repo.save(row);
     await this.writeAudit(u, 'platform.product.status_changed', 'product', id, { status, reason });
     return saved;
@@ -259,7 +259,7 @@ export class GovernanceService {
         stored.push({ type, fileName: safeName, mimeType: file.mimetype, size: file.size, storageKey, sha256 });
       }
       const result = await this.db.transaction(async manager => {
-        const organization = await manager.save(OrganizationEntity, manager.create(OrganizationEntity, { id: organizationId, companyName: vendorName, registrationNumber, industry: 'Not provided', country: 'Not provided', administrator: { firstName: contactPerson.split(/\s+/)[0] ?? '', lastName: contactPerson.split(/\s+/).slice(1).join(' '), email, phone: 'Not provided' }, address: { line1: 'Not provided', city: 'Not provided', state: 'Not provided', country: 'Not provided', postalCode: 'Not provided' }, documents: [], status: 'submitted' }));
+        const organization = await manager.save(OrganizationEntity, manager.create(OrganizationEntity, { id: organizationId, companyName: vendorName, registrationNumber, industry: 'Not provided', country: 'Not provided', administrator: { firstName: contactPerson.split(/\s+/)[0] ?? '', lastName: contactPerson.split(/\s+/).slice(1).join(' '), email, phone: 'Not provided' }, address: { line1: 'Not provided', city: 'Not provided', state: 'Not provided', country: 'Not provided', postalCode: 'Not provided' }, documents: [], submittedBy:submittedBy(u), status: 'submitted' }));
         const name = this.contactName(contactPerson);
         const user = await manager.save(UserEntity, manager.create(UserEntity, { email, organizationId: organization.id, passwordHash: await argon2.hash(temporaryPassword, { type: argon2.argon2id }), role: 'admin', isActive: true, mustChangePassword: true, ...name }));
         if (stored.length) await manager.save(OrganizationDocumentEntity, stored.map(document => manager.create(OrganizationDocumentEntity, { organizationId: organization.id, type: document.type, fileName: document.fileName, mimeType: document.mimeType, size: document.size, storageKey: document.storageKey, status: 'verified', sha256: document.sha256, uploadedBy: u.userId })));
@@ -270,7 +270,7 @@ export class GovernanceService {
         await manager.save(AuditLogEntity, manager.create(AuditLogEntity, { organizationId: u.organizationId, actorId: u.userId, action: 'platform.vendor.created', resourceType: 'organization', resourceId: organization.id, status: 'success', metadata: { vendorInvitationId: invitation.id, documentCount: stored.length } }));
         return { invitation, organization, user };
       });
-      return { id: result.organization.id, invitationId: result.invitation.id, email, status: 'pending', documentsUploaded: stored.length };
+      return { id: result.organization.id, invitationId: result.invitation.id, email, status: 'pending', documentsUploaded: stored.length, submittedBy:result.organization.submittedBy };
     } catch (error) {
       await Promise.allSettled(stored.map((document) => this.documents.remove(document.storageKey)));
       throw error;
@@ -280,7 +280,7 @@ export class GovernanceService {
     return this.db.transaction(async (m) => {
       const org = await m.findOneBy(OrganizationEntity, { id });
       if (!org) throw new DomainError('Vendor was not found', 'VENDOR_NOT_FOUND', 404);
-      const fromStatus = org.status; org.status = toStatus; await m.save(org);
+      const fromStatus = org.status; org.status = toStatus; if(toStatus==='approved')org.approvedBy=submittedBy(u); await m.save(org);
       await m.save(VendorStatusHistoryEntity, m.create(VendorStatusHistoryEntity, this.audit(u, { organizationId: id, fromStatus, toStatus, reason: dto.reason })));
       await m.save(AuditLogEntity, m.create(AuditLogEntity, { organizationId: u.organizationId, actorId: u.userId, action: `vendor.${toStatus}`, resourceType: 'organization', resourceId: id, status: 'success', metadata: { fromStatus, toStatus, reason: dto.reason } }));
       return org;

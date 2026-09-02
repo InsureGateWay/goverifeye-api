@@ -6,14 +6,15 @@ import { Product, ProductStatus } from './product.model';
 import { PRODUCT_REPOSITORY, ProductRepository } from './product.repository';
 import { DomainError } from '../common/domain-error';
 import { ProductImageStorageService } from './product-image-storage.service';
+import { RequestContext, submittedBy } from '../common/request-context';
 @Injectable()
 export class ProductService {
   constructor(@Inject(PRODUCT_REPOSITORY) private readonly products: ProductRepository, private readonly images: ProductImageStorageService) {}
   list(organizationId: string, query: ProductQueryDto) { return this.products.find({ organizationId, ...query }); }
-  async create(organizationId: string, actorId: string, dto: CreateProductDto) {
+  async create(organizationId: string, actor: RequestContext, dto: CreateProductDto) {
     const now = new Date();
     const product: Product = { id: randomUUID(), organizationId, ...dto, status: ProductStatus.Pending,
-      totalCodes: 0, scanned: 0, suspicious: 0, createdBy: actorId, createdAt: now, updatedAt: now };
+      totalCodes: 0, scanned: 0, suspicious: 0, createdBy: actor.userId, submittedBy: submittedBy(actor), createdAt: now, updatedAt: now };
     return this.products.save(product);
   }
   async archive(id: string, organizationId: string) {

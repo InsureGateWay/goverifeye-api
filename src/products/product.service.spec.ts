@@ -6,8 +6,8 @@ describe('ProductService', () => {
   beforeEach(() => jest.clearAllMocks());
   it('creates a pending product scoped to its organization', async () => {
     repository.save.mockImplementation(async product => product);
-    const result = await service.create('org-1', 'user-1', { name: 'Pain Relief', description: 'A registered pain relief product', form: 'Tablet', manufacturer: 'Acme Pharma' });
-    expect(result.status).toBe(ProductStatus.Pending); expect(result.organizationId).toBe('org-1'); expect(repository.save).toHaveBeenCalledTimes(1);
+    const result = await service.create('org-1', {userId:'user-1',organizationId:'org-1',sessionId:'session-1',name:'Ada Admin',role:'admin',email:'ada@example.com'}, { name: 'Pain Relief', description: 'A registered pain relief product', form: 'Tablet', manufacturer: 'Acme Pharma' });
+    expect(result.status).toBe(ProductStatus.Pending); expect(result.organizationId).toBe('org-1'); expect(result.submittedBy).toEqual({name:'Ada Admin',role:'admin',email:'ada@example.com'}); expect(repository.save).toHaveBeenCalledTimes(1);
   });
   it('archives an existing product', async () => {
     const product = { id: 'p1', organizationId: 'org-1', name: 'P', description: 'description', form: 'Tablet', manufacturer: 'M', status: ProductStatus.Active, totalCodes: 2, scanned: 0, suspicious: 0, createdBy: 'u1', createdAt: new Date(), updatedAt: new Date() };

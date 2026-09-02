@@ -11,7 +11,7 @@ import { DataSource, FindOptionsWhere } from 'typeorm';
 import { Roles, UserRole } from '../auth/authorization';
 import { DomainError } from '../common/domain-error';
 import { pageOf } from '../common/api-response';
-import { CurrentUser, RequestContext } from '../common/request-context';
+import { CurrentUser, RequestContext, submittedBy } from '../common/request-context';
 import { OrganizationEntity } from '../onboarding/onboarding.entity';
 import { OnboardingWelcomeService } from '../onboarding/onboarding-welcome.service';
 import { ProductEntity } from '../products/product.entity';
@@ -136,6 +136,7 @@ export class ApprovalController {
       row.status =
         dto.decision === 'approved' ? ProductStatus.Active : ProductStatus.Rejected;
       row.rejectionReason = dto.decision === 'approved' ? undefined : dto.notes;
+      if (dto.decision === 'approved') row.approvedBy = submittedBy(u);
       await m.save(ProductEntity, row);
       await m.save(
         ApprovalDecisionEntity,
@@ -178,6 +179,7 @@ export class ApprovalController {
         );
       }
       row.status = dto.decision;
+      if (dto.decision === 'approved') row.approvedBy = submittedBy(u);
       await m.save(OrganizationEntity, row);
       await m.save(
         ApprovalDecisionEntity,
