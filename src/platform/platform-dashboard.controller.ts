@@ -5,7 +5,7 @@ import { PlatformDashboardService } from './platform-dashboard.service';
 
 @ApiTags('platform-dashboard')
 @ApiBearerAuth()
-@Roles(UserRole.PlatformAdmin)
+@Roles(UserRole.SuperAdmin)
 @Controller('platform/dashboard')
 export class PlatformDashboardController {
   constructor(private readonly service: PlatformDashboardService) {}

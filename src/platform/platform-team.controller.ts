@@ -17,7 +17,7 @@ import type { Response } from 'express';
 
 @ApiTags('platform-team')
 @ApiBearerAuth()
-@Roles(UserRole.PlatformAdmin)
+@Roles(UserRole.SuperAdmin)
 @Controller('platform/team')
 export class PlatformTeamController {
   constructor(private readonly service: PlatformTeamService) {}

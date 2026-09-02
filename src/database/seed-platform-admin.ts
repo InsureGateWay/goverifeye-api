@@ -10,7 +10,7 @@ import { EmailTemplateEntity, EmailTemplateHistoryEntity } from '../operations/e
 import { invitationEmail, passwordResetCodeEmail, vendorOnboardingSubmittedEmail, vendorVerifiedEmail, verificationCodeEmail } from '../operations/email-templates'
 
 /**
- * Seeds / promotes a platform_admin user for Admin Portal testing.
+ * Seeds / promotes a super_admin user for Admin Portal testing.
  *
  * Env overrides:
  *   SEED_PLATFORM_ADMIN_EMAIL
@@ -99,7 +99,7 @@ export async function seedPlatformAdmin() {
           firstName,
           lastName,
           organizationId: organization.id,
-          role: 'platform_admin',
+          role: 'super_admin',
           isActive: true,
         })
       } else {
@@ -111,7 +111,7 @@ export async function seedPlatformAdmin() {
         user.firstName = firstName
         user.lastName = lastName
         user.organizationId = organization.id
-        user.role = 'platform_admin'
+        user.role = 'super_admin'
         user.isActive = true
       }
       user = await users.save(user)

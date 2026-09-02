@@ -15,7 +15,7 @@ import { PlatformGenerateCodeService } from './platform-generate-code.service';
 
 @ApiTags('platform-generate-code')
 @ApiBearerAuth()
-@Roles(UserRole.PlatformAdmin)
+@Roles(UserRole.SuperAdmin)
 @Controller('platform/generate-code')
 export class PlatformGenerateCodeController {
   constructor(private readonly service: PlatformGenerateCodeService) {}

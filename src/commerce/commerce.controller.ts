@@ -36,7 +36,7 @@ export class CommerceController {
     return this.pricing.list();
   }
 
-  @Roles(UserRole.PlatformAdmin) @Patch('platform/code-pricing') async updatePricing(@CurrentUser() user: RequestContext, @Body() dto: UpdateCodePricingDto) {
+@Roles(UserRole.SuperAdmin) @Patch('platform/code-pricing') async updatePricing(@CurrentUser() user: RequestContext, @Body() dto: UpdateCodePricingDto) {
     return this.pricing.updatePrices({
       ...(dto.micro !== undefined ? { [LabelType.Micro]: dto.micro } : {}),
       ...(dto.main !== undefined ? { [LabelType.Main]: dto.main } : {}),
@@ -62,6 +62,6 @@ export class CommerceController {
   @Get('jobs/:id') async job(@CurrentUser()user:RequestContext,@Param('id')id:string){const row=await this.jobs.findOneBy({id,organizationId:user.organizationId});if(!row)throw new DomainError('Job was not found','JOB_NOT_FOUND',404);return row}
   @Post('support-tickets') ticket(@CurrentUser()user:RequestContext,@Body()dto:CreateSupportTicketDto){return this.tickets.save(this.tickets.create({...dto,organizationId:user.organizationId,createdBy:user.userId}))}
   @Get('support-tickets') async listTickets(@CurrentUser()user:RequestContext,@Query()query:JobQueryDto){const order=toOrder(query.sortBy,query.sortDirection,['createdAt','updatedAt','status','subject']as const,'createdAt');const[data,total]=await this.tickets.findAndCount({where:{organizationId:user.organizationId,...(query.status?{status:query.status}:{})},order,skip:(query.page-1)*query.pageSize,take:query.pageSize});return pageOf(data,total,query.page,query.pageSize,query.sortBy,query.sortDirection)}
-  @Roles(UserRole.PlatformAdmin) @Get('platform/support-tickets')async platformTickets(@Query()query:JobQueryDto){const order=toOrder(query.sortBy,query.sortDirection,['createdAt','updatedAt','status','subject']as const,'createdAt');const[data,total]=await this.tickets.findAndCount({where:{...(query.status?{status:query.status}:{})},order,skip:(query.page-1)*query.pageSize,take:query.pageSize});return pageOf(data,total,query.page,query.pageSize,query.sortBy,query.sortDirection)}
-  @Roles(UserRole.PlatformAdmin) @Patch('platform/support-tickets/:id')async updateTicket(@Param('id')id:string,@Body()dto:UpdateSupportTicketDto){const row=await this.tickets.findOneBy({id});if(!row)throw new DomainError('Support ticket was not found','SUPPORT_TICKET_NOT_FOUND',404);row.status=dto.status;return this.tickets.save(row)}
+  @Roles(UserRole.SuperAdmin) @Get('platform/support-tickets')async platformTickets(@Query()query:JobQueryDto){const order=toOrder(query.sortBy,query.sortDirection,['createdAt','updatedAt','status','subject']as const,'createdAt');const[data,total]=await this.tickets.findAndCount({where:{...(query.status?{status:query.status}:{})},order,skip:(query.page-1)*query.pageSize,take:query.pageSize});return pageOf(data,total,query.page,query.pageSize,query.sortBy,query.sortDirection)}
+  @Roles(UserRole.SuperAdmin) @Patch('platform/support-tickets/:id')async updateTicket(@Param('id')id:string,@Body()dto:UpdateSupportTicketDto){const row=await this.tickets.findOneBy({id});if(!row)throw new DomainError('Support ticket was not found','SUPPORT_TICKET_NOT_FOUND',404);row.status=dto.status;return this.tickets.save(row)}
 }

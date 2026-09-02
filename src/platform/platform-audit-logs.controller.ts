@@ -9,7 +9,7 @@ import { PlatformAuditLogsService } from './platform-audit-logs.service';
 
 @ApiTags('platform-audit-logs')
 @ApiBearerAuth()
-@Roles(UserRole.PlatformAdmin)
+@Roles(UserRole.SuperAdmin)
 @Controller('platform/audit-logs')
 export class PlatformAuditLogsController {
   constructor(private readonly service: PlatformAuditLogsService) {}

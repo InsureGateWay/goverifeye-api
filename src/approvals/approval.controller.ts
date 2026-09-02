@@ -25,7 +25,7 @@ import {
 
 @ApiTags('platform-approvals')
 @ApiBearerAuth()
-@Roles(UserRole.PlatformAdmin)
+@Roles(UserRole.SuperAdmin)
 @Controller('platform/approvals')
 export class ApprovalController {
   constructor(

@@ -6,7 +6,7 @@ import type { Response } from 'express';
 
 @ApiTags('platform-reports')
 @ApiBearerAuth()
-@Roles(UserRole.PlatformAdmin)
+@Roles(UserRole.SuperAdmin)
 @Controller('platform/reports')
 export class PlatformReportsController {
   constructor(private readonly service: PlatformReportsService) {}

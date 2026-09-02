@@ -89,14 +89,14 @@ export class AuthenticatedUserDto {
   @ApiProperty() firstName!: string;
   @ApiProperty() lastName!: string;
   @ApiProperty({ format: 'uuid' }) organizationId!: string;
-  @ApiProperty({ example: 'platform_admin' }) role!: string;
+  @ApiProperty({ example: 'super_admin' }) role!: string;
 }
 export class TokenResponseDto {
   @ApiProperty() accessToken!: string;
   @ApiProperty() refreshToken!: string;
   @ApiProperty({ example: 'Bearer' }) tokenType!: string;
   @ApiProperty({ example: 900 }) expiresInSeconds!: number;
-  @ApiProperty({ example: 'platform_admin' }) role!: string;
+  @ApiProperty({ example: 'super_admin' }) role!: string;
   @ApiProperty({ type: AuthenticatedUserDto }) user!: AuthenticatedUserDto;
   @ApiPropertyOptional() rememberMe?: boolean;
 }

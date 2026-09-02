@@ -1,7 +1,7 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { RequestContext } from '../common/request-context';
-export enum UserRole { Admin = 'admin', Staff = 'staff', PlatformAdmin = 'platform_admin' }
+export enum UserRole { Admin = 'admin', Staff = 'staff', SuperAdmin = 'super_admin' }
 export const ROLES_KEY = 'roles';
 export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);
 @Injectable() export class RolesGuard implements CanActivate {

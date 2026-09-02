@@ -33,7 +33,7 @@ export class PlatformTeamService {
     if (found) return found.id;
 
     const admin = await this.db.getRepository(UserEntity).findOneBy({
-      role: 'platform_admin',
+      role: 'super_admin',
     });
     if (!admin) {
       throw new DomainError(
@@ -59,7 +59,7 @@ export class PlatformTeamService {
         acceptedAt: IsNull(),
       }),
       users.find({
-        where: { organizationId: orgId, role: 'platform_admin' },
+        where: { organizationId: orgId, role: 'super_admin' },
       }),
     ]);
 
@@ -139,7 +139,7 @@ export class PlatformTeamService {
 
     if (total === 0) {
       const users = await this.db.getRepository(UserEntity).find({
-        where: { organizationId: orgId, role: 'platform_admin' },
+        where: { organizationId: orgId, role: 'super_admin' },
         order: { createdAt: 'DESC' },
       });
       const filtered = users.filter((user) => {
@@ -261,7 +261,7 @@ export class PlatformTeamService {
         const user = await users.findOneBy({
           id,
           organizationId: orgId,
-          role: 'platform_admin',
+          role: 'super_admin',
         });
         if (!user) {
           throw new DomainError(
@@ -307,7 +307,7 @@ export class PlatformTeamService {
         const user = await users.findOneBy({
           id,
           organizationId: orgId,
-          role: 'platform_admin',
+          role: 'super_admin',
         });
         if (!user) {
           throw new DomainError(

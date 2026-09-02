@@ -8,7 +8,7 @@ import { CurrentUser, RequestContext } from '../common/request-context';
 
 @ApiTags('platform-manage-codes')
 @ApiBearerAuth()
-@Roles(UserRole.PlatformAdmin)
+@Roles(UserRole.SuperAdmin)
 @Controller('platform/manage-codes')
 export class PlatformManageCodesController {
   constructor(private readonly service: PlatformManageCodesService) {}

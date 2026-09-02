@@ -5,7 +5,7 @@ import { CurrentUser, RequestContext } from '../common/request-context';
 import { ActivateEmailTemplateDto, CreateEmailTemplateDto, EmailTemplateQueryDto, PreviewEmailTemplateDto, UpdateEmailTemplateDto } from './email-template.dto';
 import { EmailTemplateService } from './email-template.service';
 
-@ApiBearerAuth() @ApiTags('platform-email-templates') @Roles(UserRole.PlatformAdmin) @Controller('platform/email-templates')
+@ApiBearerAuth() @ApiTags('platform-email-templates') @Roles(UserRole.SuperAdmin) @Controller('platform/email-templates')
 export class EmailTemplateController{
   constructor(private readonly service:EmailTemplateService){}
   @Get() list(@Query()q:EmailTemplateQueryDto){return this.service.list(q);}

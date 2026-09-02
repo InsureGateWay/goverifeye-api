@@ -34,7 +34,7 @@ export class PlatformAdminSeedController {
     return {
       seeded: true,
       email: (process.env.SEED_PLATFORM_ADMIN_EMAIL ?? 'senorleo12@yahoo.com').trim().toLowerCase(),
-      role: 'platform_admin',
+      role: 'super_admin',
     };
   }
 
