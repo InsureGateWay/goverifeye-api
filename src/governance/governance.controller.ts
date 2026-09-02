@@ -18,7 +18,9 @@ import { Public } from '../auth/public.decorator';
 export class GovernanceController {
   constructor(private readonly service: GovernanceService) {}
 
-  @Public() @Get('options/:namespace') options(@Param('namespace')namespace:string){return this.service.publicOptions(namespace);}
+  @Public() @Get('options') options(){return this.service.publicOptions();}
+  @Public() @Get('options/:namespace') optionsByNamespace(@Param('namespace')namespace:string){return this.service.publicOptions(namespace);}
+  @Roles(UserRole.SuperAdmin) @Get('platform/options/all') allOptions(){return this.service.allOptions();}
   @Roles(UserRole.SuperAdmin) @Get('platform/options') adminOptions(@Query()q:OptionQueryDto){return this.service.listOptions(q);}
   @Roles(UserRole.SuperAdmin) @Post('platform/options') createOption(@CurrentUser()u:RequestContext,@Body()dto:CreateOptionDto){return this.service.createOption(u,dto);}
   @Roles(UserRole.SuperAdmin) @Patch('platform/options/:id') updateOption(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:UpdateOptionDto){return this.service.updateOption(u,id,dto);}
