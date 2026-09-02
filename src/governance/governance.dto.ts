@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import { IsBoolean, IsDefined, IsEmail, IsIn, IsInt, IsObject, IsOptional, IsString, IsUUID, Length, Max, MaxLength, Min } from 'class-validator';
 import { PageQueryDto } from '../common/page-query.dto';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateChangeRequestDto {
   @IsString() @Length(3, 4000) details!: string;
@@ -56,10 +57,10 @@ export class AddCaseNoteDto {
   @IsOptional() evidence?: Array<{ fileName: string; url?: string }>;
 }
 export class AuditExceptionQueryDto extends PageQueryDto {
-  @IsOptional() @IsString() @MaxLength(200) query?: string;
-  @IsOptional() @IsIn(['high', 'medium', 'low', 'all']) severity?: string;
-  @IsOptional() @IsIn(['open', 'closed', 'all']) status?: string;
-  @IsIn(['createdAt', 'updatedAt', 'severity', 'status']) override sortBy = 'createdAt';
+  @ApiPropertyOptional({type:String,maxLength:200}) @IsOptional() @IsString() @MaxLength(200) query?: string;
+  @ApiPropertyOptional({type:String,enum:['high','medium','low','all']}) @IsOptional() @IsIn(['high', 'medium', 'low', 'all']) severity?: string;
+  @ApiPropertyOptional({type:String,enum:['open','closed','all']}) @IsOptional() @IsIn(['open', 'closed', 'all']) status?: string;
+  @ApiPropertyOptional({type:String,enum:['createdAt','updatedAt','severity','status'],default:'createdAt'}) @IsIn(['createdAt', 'updatedAt', 'severity', 'status']) override sortBy = 'createdAt';
 }
 export class CreateAuditExceptionDto {
   @IsOptional() @IsUUID() auditLogId?: string;
