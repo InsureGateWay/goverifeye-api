@@ -210,6 +210,15 @@ ${roleBadge}`,
   };
 }
 
+export function vendorAccountCreatedEmail(input: { firstName?: string; companyName: string; email: string; temporaryPassword: string; loginUrl: string }): EmailContent {
+  const greeting = displayName(input.firstName) ? `Hi ${displayName(input.firstName)},` : 'Hello,';
+  return {
+    subject: `Your goVerifEye account for ${input.companyName}`,
+    text: `${greeting}\n\nYour vendor account has been added to goVerifEye.\n\nEmail: ${input.email}\nTemporary password: ${input.temporaryPassword}\n\nSign in at ${input.loginUrl}. For your security, change this temporary password immediately after your first login. Do not share it with anyone.`,
+    html: layout({ preheader:'Your goVerifEye vendor account is ready.', eyebrow:'Vendor account created', heading:'Your account is ready', body:`<p style="margin:0 0 12px;font-size:16px;font-weight:600;color:${TEXT_PRIMARY}">${escapeHtml(greeting)}</p><p style="margin:0 0 16px">Your vendor account for <strong>${escapeHtml(input.companyName)}</strong> has been added to goVerifEye.</p><p style="margin:0 0 4px"><strong>Email:</strong> ${escapeHtml(input.email)}</p><p style="margin:0 0 16px"><strong>Temporary password:</strong> <span style="font-family:monospace">${escapeHtml(input.temporaryPassword)}</span></p><p style="margin:0">Sign in, then change this temporary password immediately from Settings &gt; Security.</p>`, action:{label:'Sign in to goVerifEye',url:input.loginUrl}, notice:'Keep this password private. If you did not expect this account, contact support.' }),
+  };
+}
+
 export function vendorOnboardingSubmittedEmail(input: {
   firstName?: string;
   companyName: string;

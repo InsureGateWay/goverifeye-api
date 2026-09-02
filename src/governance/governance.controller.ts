@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Header, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, Patch, Post, Query, Res, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { Roles, UserRole } from '../auth/authorization';
@@ -11,8 +12,9 @@ import {
   ResolveAuditExceptionDto, UpdateFraudCaseDto, UpdateIncidentDto,
   VendorLifecycleDto, ReviewChangeRequestDto, ChangeRequestQueryDto, OptionQueryDto, CreateOptionDto, UpdateOptionDto,
 } from './governance.dto';
-import { GovernanceService } from './governance.service';
+import { GovernanceService, UploadedVendorFile } from './governance.service';
 import { Public } from '../auth/public.decorator';
+import { CreateProductDto } from '../products/dto/product.dto';
 
 @ApiBearerAuth() @ApiTags('governance') @Controller()
 export class GovernanceController {
@@ -40,8 +42,9 @@ export class GovernanceController {
   @Roles(UserRole.SuperAdmin) @Get('platform/products/:id') product(@Param('id')id:string){return this.service.product(id);}
   @Roles(UserRole.SuperAdmin) @Patch('platform/products/:id/status') productStatus(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:PlatformProductStatusDto){return this.service.setProductStatus(u,id,dto.status,dto.reason);}
   @Roles(UserRole.SuperAdmin) @Patch('platform/products/:id/archive') archiveProduct(@CurrentUser()u:RequestContext,@Param('id')id:string){return this.service.setProductStatus(u,id,'archived');}
+  @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:vendorId/products') createProductForVendor(@CurrentUser()u:RequestContext,@Param('vendorId')vendorId:string,@Body()dto:CreateProductDto){return this.service.createProductForVendor(u,vendorId,dto);}
 
-  @Roles(UserRole.SuperAdmin) @Post('platform/vendors/invites') inviteVendor(@CurrentUser()u:RequestContext,@Body()dto:InviteVendorDto){return this.service.inviteVendor(u,dto);}
+  @Roles(UserRole.SuperAdmin) @Post('platform/vendors/invites') @UseInterceptors(FileFieldsInterceptor([{name:'cac',maxCount:1},{name:'tax',maxCount:1},{name:'other',maxCount:1}],{limits:{fileSize:5*1024*1024,files:3}})) inviteVendor(@CurrentUser()u:RequestContext,@Body()dto:InviteVendorDto,@UploadedFiles()files?:Record<string,UploadedVendorFile[]>){return this.service.inviteVendor(u,dto,files);}
   @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:id/deactivate') deactivateVendor(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:VendorLifecycleDto){return this.service.vendorLifecycle(u,id,'deactivated',dto);}
   @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:id/reactivate') reactivateVendor(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:VendorLifecycleDto){return this.service.vendorLifecycle(u,id,'approved',dto);}
 

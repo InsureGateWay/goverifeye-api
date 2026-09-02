@@ -49,6 +49,9 @@ export class VendorInvitationEntity extends AuditedEntity {
   @Column({ type: 'timestamptz' }) expiresAt!: Date;
   @Column({ type: 'timestamptz', nullable: true }) acceptedAt?: Date | null;
   @Column({ type: 'timestamptz', nullable: true }) revokedAt?: Date | null;
+  @Column({ type: 'uuid', nullable: true }) @Index() organizationId?: string | null;
+  @Column({ type: 'uuid', nullable: true }) @Index() userId?: string | null;
+  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" }) documents!: Array<{ type: string; fileName: string; mimeType: string; size: number; storageKey: string; sha256: string }>;
 }
 
 @Entity('vendor_status_history')

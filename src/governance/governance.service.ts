@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'crypto';
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomInt, randomUUID } from 'crypto';
 import * as argon2 from 'argon2';
 import { Brackets, DataSource, ILike, In, IsNull } from 'typeorm';
 import { UserEntity } from '../auth/auth.entity';
@@ -9,10 +9,18 @@ import { DomainError } from '../common/domain-error';
 import { RequestContext } from '../common/request-context';
 import { toOrder } from '../common/page-query.dto';
 import { VerificationEventEntity } from '../codes/code.entity';
-import { OrganizationEntity } from '../onboarding/onboarding.entity';
+import { OrganizationDocumentEntity, OrganizationEntity } from '../onboarding/onboarding.entity';
 import { AuditLogEntity } from '../operations/operations.entity';
 import { ProductEntity } from '../products/product.entity';
 import { ProductStatus } from '../products/product.model';
+import { CreateProductDto } from '../products/dto/product.dto';
+import { ProductService } from '../products/product.service';
+import { DocumentStorageService } from '../onboarding/document-storage.service';
+import { DocumentSecurityService } from '../onboarding/document-security.service';
+import { MalwareScannerService } from '../onboarding/malware-scanner.service';
+import { ReliabilityService } from '../operations/reliability.service';
+import { EmailTemplateService } from '../operations/email-template.service';
+import { vendorAccountCreatedEmail } from '../operations/email-templates';
 import {
   AddCaseNoteDto, AuditExceptionQueryDto, CreateAuditExceptionDto,
   CreateChangeRequestDto, CreateFraudCaseDto, CreateIncidentDto,
@@ -56,10 +64,11 @@ function totp(secret: string, step = Math.floor(Date.now() / 30000)): string {
   const offset = digest[digest.length - 1]! & 15;
   return ((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).toString().padStart(6, '0');
 }
+export type UploadedVendorFile = { buffer: Buffer; size: number; mimetype: string; originalname: string };
 
 @Injectable()
 export class GovernanceService {
-  constructor(private readonly db: DataSource, private readonly config: ConfigService) {}
+  constructor(private readonly db: DataSource, private readonly config: ConfigService, private readonly documents: DocumentStorageService, private readonly documentSecurity: DocumentSecurityService, private readonly malware: MalwareScannerService, private readonly reliability: ReliabilityService, private readonly emailTemplates: EmailTemplateService, private readonly productService: ProductService) {}
   private audit<T extends object>(u: RequestContext, data: T): T & { createdById: string; updatedById: string } {
     return { ...data, createdById: u.userId, updatedById: u.userId };
   }
@@ -139,6 +148,14 @@ export class GovernanceService {
     const org = await this.db.getRepository(OrganizationEntity).findOneBy({ id: row.organizationId });
     return { ...row, vendor: org?.companyName ?? 'Organization', vendorId: row.organizationId, codes: row.totalCodes, scans: row.scanned };
   }
+  async createProductForVendor(u: RequestContext, vendorId: string, dto: CreateProductDto) {
+    const organization = await this.db.getRepository(OrganizationEntity).findOneBy({ id: vendorId });
+    if (!organization) throw new DomainError('Vendor was not found', 'VENDOR_NOT_FOUND', 404);
+    if (organization.status !== 'approved') throw new DomainError('The vendor account must be approved before products can be created', 'ACCOUNT_NOT_ACTIVATED', 403);
+    const product = await this.productService.create(vendorId, u.userId, dto);
+    await this.writeAudit(u, 'platform.product.created_for_vendor', 'product', product.id, { vendorId });
+    return product;
+  }
   async setProductStatus(u: RequestContext, id: string, status: string, reason?: string) {
     const repo = this.db.getRepository(ProductEntity), row = await repo.findOneBy({ id });
     if (!row) throw new DomainError('Product was not found', 'PRODUCT_NOT_FOUND', 404);
@@ -148,12 +165,54 @@ export class GovernanceService {
     return saved;
   }
 
-  async inviteVendor(u: RequestContext, dto: InviteVendorDto) {
-    const repo = this.db.getRepository(VendorInvitationEntity), email = dto.email.trim().toLowerCase();
-    if (await repo.existsBy({ email, status: 'pending' })) throw new DomainError('An active vendor invitation already exists', 'VENDOR_INVITATION_EXISTS', 409);
-    const token = randomBytes(32).toString('base64url');
-    const row = await repo.save(repo.create(this.audit(u, { ...dto, email, status: 'pending', tokenHash: createHash('sha256').update(token).digest('hex'), expiresAt: new Date(Date.now() + 7 * 86400000) })));
-    return { id: row.id, email: row.email, status: row.status, expiresAt: row.expiresAt, ...(this.config.get('NODE_ENV') === 'test' ? { token } : {}) };
+  private temporaryPassword() {
+    const lower = 'abcdefghijkmnopqrstuvwxyz', upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ', digits = '23456789', symbols = '!@#$%';
+    const pick = (set: string) => set[randomInt(set.length)]!;
+    const chars = [pick(lower), pick(upper), pick(digits), pick(symbols), ...Array.from({ length: 12 }, () => pick(lower + upper + digits + symbols))];
+    for (let i = chars.length - 1; i > 0; i--) { const j = randomInt(i + 1); [chars[i], chars[j]] = [chars[j]!, chars[i]!]; }
+    return chars.join('');
+  }
+  private contactName(name: string) { const [firstName = '', ...rest] = name.trim().split(/\s+/); return { firstName, lastName: rest.join(' ') }; }
+  async inviteVendor(u: RequestContext, dto: InviteVendorDto, files: Record<string, UploadedVendorFile[]> = {}) {
+    const email = dto.email.trim().toLowerCase(), vendorName = dto.vendorName.trim(), contactPerson = dto.contactPerson.trim();
+    const supplied = ['cac', 'tax', 'other'].flatMap((type) => (files[type] ?? []).map((file) => ({ type, file })));
+    if (!(files.cac?.length)) throw new DomainError('A CAC Certificate is required to add a vendor', 'CAC_DOCUMENT_REQUIRED', 400);
+    if (supplied.length > 3) throw new DomainError('A maximum of three documents can be uploaded', 'DOCUMENT_LIMIT_EXCEEDED', 400);
+    for (const { file } of supplied) {
+      if (file.size > 5 * 1024 * 1024) throw new DomainError('Each document must be 5MB or smaller', 'DOCUMENT_TOO_LARGE', 400);
+      if (!['application/pdf', 'image/png', 'image/jpeg'].includes(file.mimetype)) throw new DomainError('Documents must be PDF, PNG, or JPEG files', 'DOCUMENT_TYPE_INVALID', 400);
+      this.documentSecurity.inspect(file.buffer, file.mimetype, file.size);
+      await this.malware.assertClean(file.buffer, file.originalname, file.mimetype);
+    }
+    if (await this.db.getRepository(UserEntity).existsBy({ email })) throw new DomainError('A user already exists for this email', 'VENDOR_EMAIL_ALREADY_REGISTERED', 409);
+    if (await this.db.getRepository(VendorInvitationEntity).existsBy({ email, status: 'pending' })) throw new DomainError('An active vendor invitation already exists', 'VENDOR_INVITATION_EXISTS', 409);
+    const temporaryPassword = this.temporaryPassword(), registrationNumber = `GV-${randomBytes(10).toString('hex').toUpperCase()}`, token = randomBytes(32).toString('base64url'), organizationId = randomUUID();
+    const stored: Array<{ type: string; fileName: string; mimeType: string; size: number; storageKey: string; sha256: string }> = [];
+    try {
+      for (const { type, file } of supplied) {
+        const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-160) || 'document';
+        const storageKey = `organizations/${organizationId}/documents/${randomUUID()}-${safeName}`;
+        const { sha256 } = this.documentSecurity.inspect(file.buffer, file.mimetype, file.size);
+        await this.documents.upload(storageKey, file.buffer, file.mimetype);
+        stored.push({ type, fileName: safeName, mimeType: file.mimetype, size: file.size, storageKey, sha256 });
+      }
+      const result = await this.db.transaction(async manager => {
+        const organization = await manager.save(OrganizationEntity, manager.create(OrganizationEntity, { id: organizationId, companyName: vendorName, registrationNumber, industry: 'Not provided', country: 'Not provided', administrator: { firstName: contactPerson.split(/\s+/)[0] ?? '', lastName: contactPerson.split(/\s+/).slice(1).join(' '), email, phone: 'Not provided' }, address: { line1: 'Not provided', city: 'Not provided', state: 'Not provided', country: 'Not provided', postalCode: 'Not provided' }, documents: [], status: 'submitted' }));
+        const name = this.contactName(contactPerson);
+        const user = await manager.save(UserEntity, manager.create(UserEntity, { email, organizationId: organization.id, passwordHash: await argon2.hash(temporaryPassword, { type: argon2.argon2id }), role: 'admin', isActive: true, mustChangePassword: true, ...name }));
+        if (stored.length) await manager.save(OrganizationDocumentEntity, stored.map(document => manager.create(OrganizationDocumentEntity, { organizationId: organization.id, type: document.type, fileName: document.fileName, mimeType: document.mimeType, size: document.size, storageKey: document.storageKey, status: 'verified', sha256: document.sha256, uploadedBy: u.userId })));
+        const invitation = await manager.save(VendorInvitationEntity, manager.create(VendorInvitationEntity, this.audit(u, { vendorName, contactPerson, email, status: 'accepted', tokenHash: createHash('sha256').update(token).digest('hex'), expiresAt: new Date(), acceptedAt: new Date(), organizationId: organization.id, userId: user.id, documents: stored })));
+        const variables = { firstName: name.firstName, companyName: vendorName, email, temporaryPassword, loginUrl: `${process.env.APP_PUBLIC_URL ?? 'http://localhost:5173'}/login` };
+        const content = await this.emailTemplates.render(manager, 'vendor.account_created', variables, () => vendorAccountCreatedEmail(variables));
+        await this.reliability.enqueue(manager, 'email.send', 'vendor-account', invitation.id, { to: email, ...content });
+        await manager.save(AuditLogEntity, manager.create(AuditLogEntity, { organizationId: u.organizationId, actorId: u.userId, action: 'platform.vendor.created', resourceType: 'organization', resourceId: organization.id, status: 'success', metadata: { vendorInvitationId: invitation.id, documentCount: stored.length } }));
+        return { invitation, organization, user };
+      });
+      return { id: result.organization.id, invitationId: result.invitation.id, email, status: 'pending', documentsUploaded: stored.length };
+    } catch (error) {
+      await Promise.allSettled(stored.map((document) => this.documents.remove(document.storageKey)));
+      throw error;
+    }
   }
   async vendorLifecycle(u: RequestContext, id: string, toStatus: string, dto: VendorLifecycleDto) {
     return this.db.transaction(async (m) => {

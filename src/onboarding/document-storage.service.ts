@@ -54,6 +54,11 @@ export class DocumentStorageService {
     return Buffer.from(await data.arrayBuffer());
   }
 
+  async upload(path: string, content: Buffer, mimeType: string) {
+    const { error } = await this.storage.upload(path, content, { contentType: mimeType, upsert: false });
+    if (error) this.fail('object.upload', path, error);
+  }
+
   async remove(path: string) {
     const { error } = await this.storage.remove([path]);
     if (error) this.fail('object.remove', path, error);
