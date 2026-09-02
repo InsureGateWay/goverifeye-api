@@ -9,8 +9,8 @@ export interface GeneratedCodePair { verificationCode: string; activationCode: s
 export class CryptographicCodeGenerator {
   constructor(@Inject(codeGenerationConfig.KEY) private readonly options: ConfigType<typeof codeGenerationConfig>) {}
 
-  generatePair(): GeneratedCodePair {
-    const verificationCode = this.numericCode(this.options.verificationCodeLength);
+  generatePair(verificationCodeLength = this.options.verificationCodeLength): GeneratedCodePair {
+    const verificationCode = this.numericCode(verificationCodeLength);
     const activationCode = this.numericCode(this.options.activationCodeLength);
     return { verificationCode, activationCode, activationCodeHash: this.hashActivationCode(verificationCode, activationCode) };
   }
@@ -22,12 +22,28 @@ export class CryptographicCodeGenerator {
   }
 
   private numericCode(length: number): string {
-    let value = '';
-    while (value.length < length) {
-      const size = Math.min(8, length - value.length);
-      value += randomInt(0, 10 ** size).toString().padStart(size, '0');
+    for (;;) {
+      let value = '';
+      while (value.length < length) {
+        const size = Math.min(8, length - value.length);
+        value += randomInt(0, 10 ** size).toString().padStart(size, '0');
+      }
+      if (this.isAllowedNumericCode(value)) return value;
     }
-    return value;
+  }
+
+  private isAllowedNumericCode(value: string): boolean {
+    if (value.startsWith('000')) return false;
+    if (/^(\d)\1+$/.test(value)) return false;
+    if (/(\d)\1{3,}/.test(value)) return false;
+
+    for (let start = 0; start <= value.length - 6; start += 1) {
+      const digits = value.slice(start, start + 6).split('').map(Number);
+      const ascending = digits.every((digit, index) => index === 0 || digit === (digits[index - 1]! + 1) % 10);
+      const descending = digits.every((digit, index) => index === 0 || digit === (digits[index - 1]! + 9) % 10);
+      if (ascending || descending) return false;
+    }
+    return true;
   }
 
   private hashActivationCode(verificationCode: string, activationCode: string): string {

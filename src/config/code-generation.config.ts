@@ -1,7 +1,7 @@
 import { registerAs } from '@nestjs/config';
 
 export interface CodeGenerationOptions {
-  verificationCodeLength: 16;
+  verificationCodeLength: number;
   activationCodeLength: number;
   activationMaxAttempts: number;
   maxCodesPerBatch: number;

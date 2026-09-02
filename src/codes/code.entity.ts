@@ -4,7 +4,7 @@ export { BatchStatus, VerificationCodeStatus } from './code.enums';
 @Entity('verification_codes') @Unique('UQ_verification_codes_code', ['code']) @Index(['organizationId', 'productId'])
 export class VerificationCodeEntity extends BaseEntity {
   @Column('uuid') @Index() organizationId!: string; @Column('uuid') @Index() productId!: string; @Column('uuid') @Index() batchId!: string;
-  @Column({ type: 'varchar', length: 16 }) code!: string; @Column({ type: 'varchar', length: 64 }) activationCodeHash!: string;
+  @Column({ type: 'varchar', length: 32 }) code!: string; @Column({ type: 'varchar', length: 64 }) activationCodeHash!: string;
   @Column({ type: 'varchar', length: 20, default: VerificationCodeStatus.Inactive }) status!: VerificationCodeStatus;
   @Column({ default: 0 }) activationAttempts!: number; @Column({ default: 0 }) verificationCount!: number; @Column({ type: 'timestamp', nullable: true }) activatedAt?: Date;
   @Column('uuid', { nullable: true }) activatedBy?: string; @Column({ type: 'timestamp', nullable: true }) lastVerifiedAt?: Date;

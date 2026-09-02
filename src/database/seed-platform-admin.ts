@@ -120,12 +120,14 @@ export async function seedPlatformAdmin() {
       const defaults = [
         ...['Pharmaceuticals','Food & Beverage','Cosmetics','Electronics','Automotive','Agriculture'].map((label,index)=>({namespace:'onboarding.industries',key:label.toLowerCase().replace(/[^a-z0-9]+/g,'_'),label,value:label,valueType:'string',isPublic:true,sortOrder:index})),
         {namespace:'onboarding.countries',key:'NG',label:'Nigeria',value:{code:'NG',name:'Nigeria',dialCode:'+234'},valueType:'object',isPublic:true,sortOrder:0},
+        {namespace:'codes',key:'verification_code_length',label:'Verification code length',value:16,valueType:'number',isPublic:false,sortOrder:0,description:'Global length for newly generated numeric product verification codes. Existing codes remain valid.',validation:{min:6,max:28}},
         ...['Tablet','Capsule','Liquid','Powder','Device','Packaged Good'].map((label,index)=>({namespace:'products.forms',key:label.toLowerCase().replace(/[^a-z0-9]+/g,'_'),label,value:label,valueType:'string',isPublic:false,sortOrder:index})),
         ...[{key:'micro',label:'Micro label',value:{code:'micro',fulfillment:['preprinted','selfprint']}},{key:'main',label:'Main label',value:{code:'main',fulfillment:['preprinted','selfprint']}},{key:'pair',label:'Paired labels',value:{code:'pair',fulfillment:['preprinted','selfprint']}}].map((row,index)=>({namespace:'codes.label_types',...row,valueType:'object',isPublic:false,sortOrder:index})),
       ]
       for (const option of defaults) {
         if (await options.existsBy({ namespace: option.namespace, key: option.key })) continue
-        await options.save(options.create({ ...option, organizationId:null, description:null, validation:{}, isActive:true, createdById:user.id, updatedById:user.id }))
+        const managedOption = option as typeof option & { description?: string | null; validation?: Record<string, unknown> }
+        await options.save(options.create({ ...option, organizationId:null, description:managedOption.description??null, validation:managedOption.validation??{}, isActive:true, createdById:user.id, updatedById:user.id }))
       }
 
       const templateRepo=manager.getRepository(EmailTemplateEntity)

@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
-import { DataSource, ILike, In, MoreThan, MoreThanOrEqual } from 'typeorm'; import { createHash } from 'crypto';
+import { DataSource, ILike, In, IsNull, MoreThan, MoreThanOrEqual } from 'typeorm'; import { createHash } from 'crypto';
 import { randomInt } from 'crypto'; import * as argon2 from 'argon2';
 import codeGenerationConfig from '../config/code-generation.config';
 import { DomainError } from '../common/domain-error';
@@ -14,6 +14,7 @@ import { ReliabilityService } from '../operations/reliability.service'; import {
 import { Fulfillment } from './code.enums';
 import { PricingService } from '../commerce/pricing.service';
 import { EmailTemplateService } from '../operations/email-template.service';
+import { ApplicationOptionEntity } from '../governance/governance.entity';
 
 export interface GeneratedCredential { verificationCode: string; activationCode: string }
 
@@ -61,7 +62,7 @@ export class CodesService {
         status: BatchStatus.Generating,
       }));
 
-      const pairs = this.generateUniquePairs(input.quantity);
+      const pairs = await this.generateUniquePairs(input.quantity);
       const alreadyUsed = await manager.find(VerificationCodeEntity, {
         select: { code: true }, where: { code: In(pairs.map(item => item.verificationCode)) },
       });
@@ -142,7 +143,7 @@ export class CodesService {
       const inventory=await manager.findOne(OpenMarketBatchEntity,{where:{id:claim.inventoryBatchId,status:'available'},lock:{mode:'pessimistic_write'}}),product=await manager.findOneBy(ProductEntity,{id:claim.productId,organizationId:user.organizationId,status:ProductStatus.Active});
       if(!inventory||!product)throw new DomainError('This Open Market batch is no longer available','OPEN_MARKET_BATCH_UNAVAILABLE',409);
       const batch=await manager.save(CodeBatchEntity,manager.create(CodeBatchEntity,{organizationId:user.organizationId,productId:product.id,generatedBy:user.userId,labelType:inventory.labelType,fulfillment:Fulfillment.Preprinted,paperSize:'Roll',quantity:inventory.quantity,status:BatchStatus.Generated}));
-      const pairs=this.generateUniquePairs(inventory.quantity),rows=pairs.map(pair=>manager.create(VerificationCodeEntity,{organizationId:user.organizationId,productId:product.id,batchId:batch.id,code:pair.verificationCode,activationCodeHash:pair.activationCodeHash,status:VerificationCodeStatus.Active,activatedAt:new Date(),activatedBy:user.userId}));
+      const pairs=await this.generateUniquePairs(inventory.quantity),rows=pairs.map(pair=>manager.create(VerificationCodeEntity,{organizationId:user.organizationId,productId:product.id,batchId:batch.id,code:pair.verificationCode,activationCodeHash:pair.activationCodeHash,status:VerificationCodeStatus.Active,activatedAt:new Date(),activatedBy:user.userId}));
       for(let start=0;start<rows.length;start+=1000)await manager.insert(VerificationCodeEntity,rows.slice(start,start+1000));
       product.totalCodes+=inventory.quantity;await manager.save(ProductEntity,product);claim.consumed=true;claim.attempts=candidate.attempts;await manager.save(OpenMarketClaimEntity,claim);inventory.status='claimed';inventory.claimedAt=new Date();inventory.claimedByOrganizationId=user.organizationId;inventory.claimedCodeBatchId=batch.id;await manager.save(OpenMarketBatchEntity,inventory);
       const activatedBy=await manager.findOneBy(UserEntity,{id:user.userId,organizationId:user.organizationId});
@@ -166,9 +167,21 @@ export class CodesService {
   async cancelBatch(organizationId:string,id:string){const repo=this.dataSource.getRepository(CodeBatchEntity);const batch=await repo.findOneBy({id,organizationId});if(!batch)throw new DomainError('Code batch was not found','BATCH_NOT_FOUND',404);if(batch.status!==BatchStatus.Generating)throw new DomainError('Only a generating batch can be cancelled','BATCH_NOT_CANCELLABLE',409);batch.status=BatchStatus.Failed;return repo.save(batch)}
   async setCodeStatus(organizationId:string,id:string,status:'suspended'|'active'){const repo=this.dataSource.getRepository(VerificationCodeEntity);const row=await repo.findOneBy({id,organizationId});if(!row)throw new DomainError('Verification code was not found','CODE_NOT_FOUND',404);row.status=status=== 'active'?VerificationCodeStatus.Active:VerificationCodeStatus.Suspended;return this.safeCode(await repo.save(row))}
 
-  private generateUniquePairs(quantity: number): GeneratedCodePair[] {
+  private async verificationCodeLength(): Promise<number> {
+    const option = await this.dataSource.getRepository(ApplicationOptionEntity).findOne({
+      where: { namespace: 'codes', key: 'verification_code_length', organizationId: IsNull(), isActive: true },
+    });
+    if (!option) return this.options.verificationCodeLength;
+    if (typeof option.value !== 'number' || !Number.isInteger(option.value) || option.value < 6 || option.value > 28) {
+      throw new DomainError('The managed verification-code length is invalid', 'CODE_LENGTH_CONFIGURATION_INVALID', 503);
+    }
+    return option.value;
+  }
+
+  private async generateUniquePairs(quantity: number): Promise<GeneratedCodePair[]> {
+    const verificationCodeLength = await this.verificationCodeLength();
     const pairs: GeneratedCodePair[] = []; const seen = new Set<string>();
-    while (pairs.length < quantity) { const pair = this.generator.generatePair(); if (!seen.has(pair.verificationCode)) { seen.add(pair.verificationCode); pairs.push(pair); } }
+    while (pairs.length < quantity) { const pair = this.generator.generatePair(verificationCodeLength); if (!seen.has(pair.verificationCode)) { seen.add(pair.verificationCode); pairs.push(pair); } }
     return pairs;
   }
   private safeCode(code: VerificationCodeEntity) { return { id: code.id, code: code.code, batchId: code.batchId, productId: code.productId, status: code.status, activatedAt: code.activatedAt, verificationCount: code.verificationCount, lastVerifiedAt: code.lastVerifiedAt }; }
