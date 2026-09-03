@@ -4,5 +4,6 @@ import { AuthSessionEntity, OtpEntity, PasswordResetChallengeEntity, UserEntity 
 import { JwtStrategy } from './jwt.strategy';
 import { OperationsModule } from '../operations/operations.module';
 import { GovernanceModule } from '../governance/governance.module';
-@Module({ imports: [TypeOrmModule.forFeature([UserEntity, OtpEntity,AuthSessionEntity,PasswordResetChallengeEntity]), OperationsModule, GovernanceModule, JwtModule.registerAsync({ useFactory: () => ({ secret: process.env.JWT_ACCESS_SECRET, signOptions: { expiresIn: '15m' } }) })], controllers: [AuthController], providers: [AuthService, JwtStrategy] })
+import { OrganizationEntity } from '../onboarding/onboarding.entity';
+@Module({ imports: [TypeOrmModule.forFeature([UserEntity, OtpEntity,AuthSessionEntity,PasswordResetChallengeEntity,OrganizationEntity]), OperationsModule, GovernanceModule, JwtModule.registerAsync({ useFactory: () => ({ secret: process.env.JWT_ACCESS_SECRET, signOptions: { expiresIn: '15m' } }) })], controllers: [AuthController], providers: [AuthService, JwtStrategy] })
 export class AuthModule {}

@@ -16,6 +16,7 @@ import { OrganizationEntity } from '../onboarding/onboarding.entity';
 import { OnboardingWelcomeService } from '../onboarding/onboarding-welcome.service';
 import { ProductEntity } from '../products/product.entity';
 import { ProductStatus } from '../products/product.model';
+import { UserEntity } from '../auth/auth.entity';
 import { ApprovalDecisionEntity } from './approval.entity';
 import {
   OrganizationListQueryDto,
@@ -181,6 +182,7 @@ export class ApprovalController {
       row.status = dto.decision;
       if (dto.decision === 'approved') row.approvedBy = submittedBy(u);
       await m.save(OrganizationEntity, row);
+      if (dto.decision === 'approved') await m.update(UserEntity, { organizationId: row.id }, { isActive: true });
       await m.save(
         ApprovalDecisionEntity,
         m.create(ApprovalDecisionEntity, {

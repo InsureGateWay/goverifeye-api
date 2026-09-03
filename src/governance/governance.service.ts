@@ -261,7 +261,7 @@ export class GovernanceService {
       const result = await this.db.transaction(async manager => {
         const organization = await manager.save(OrganizationEntity, manager.create(OrganizationEntity, { id: organizationId, companyName: vendorName, registrationNumber, industry: 'Not provided', country: 'Not provided', administrator: { firstName: contactPerson.split(/\s+/)[0] ?? '', lastName: contactPerson.split(/\s+/).slice(1).join(' '), email, phone: 'Not provided' }, address: { line1: 'Not provided', city: 'Not provided', state: 'Not provided', country: 'Not provided', postalCode: 'Not provided' }, documents: [], submittedBy:submittedBy(u), status: 'submitted' }));
         const name = this.contactName(contactPerson);
-        const user = await manager.save(UserEntity, manager.create(UserEntity, { email, organizationId: organization.id, passwordHash: await argon2.hash(temporaryPassword, { type: argon2.argon2id }), role: 'admin', isActive: true, mustChangePassword: true, ...name }));
+        const user = await manager.save(UserEntity, manager.create(UserEntity, { email, organizationId: organization.id, passwordHash: await argon2.hash(temporaryPassword, { type: argon2.argon2id }), role: 'admin', isActive: false, mustChangePassword: true, ...name }));
         if (stored.length) await manager.save(OrganizationDocumentEntity, stored.map(document => manager.create(OrganizationDocumentEntity, { organizationId: organization.id, type: document.type, fileName: document.fileName, mimeType: document.mimeType, size: document.size, storageKey: document.storageKey, status: 'verified', sha256: document.sha256, uploadedBy: u.userId })));
         const invitation = await manager.save(VendorInvitationEntity, manager.create(VendorInvitationEntity, this.audit(u, { vendorName, contactPerson, email, status: 'accepted', tokenHash: createHash('sha256').update(token).digest('hex'), expiresAt: new Date(), acceptedAt: new Date(), organizationId: organization.id, userId: user.id, documents: stored })));
         const variables = { firstName: name.firstName, companyName: vendorName, email, temporaryPassword, loginUrl: `${process.env.APP_PUBLIC_URL ?? 'http://localhost:5173'}/login` };
@@ -280,7 +280,7 @@ export class GovernanceService {
     return this.db.transaction(async (m) => {
       const org = await m.findOneBy(OrganizationEntity, { id });
       if (!org) throw new DomainError('Vendor was not found', 'VENDOR_NOT_FOUND', 404);
-      const fromStatus = org.status; org.status = toStatus; if(toStatus==='approved')org.approvedBy=submittedBy(u); await m.save(org);
+      const fromStatus = org.status; org.status = toStatus; if(toStatus==='approved')org.approvedBy=submittedBy(u); await m.save(org); await m.update(UserEntity,{organizationId:id},{isActive:toStatus==='approved'});
       await m.save(VendorStatusHistoryEntity, m.create(VendorStatusHistoryEntity, this.audit(u, { organizationId: id, fromStatus, toStatus, reason: dto.reason })));
       await m.save(AuditLogEntity, m.create(AuditLogEntity, { organizationId: u.organizationId, actorId: u.userId, action: `vendor.${toStatus}`, resourceType: 'organization', resourceId: id, status: 'success', metadata: { fromStatus, toStatus, reason: dto.reason } }));
       return org;
