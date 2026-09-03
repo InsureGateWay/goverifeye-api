@@ -44,11 +44,12 @@ export class PlatformTeamController {
 
   @Patch('members/:id')
   async update(
+    @CurrentUser() user:RequestContext,
     @Param('id') id: string,
     @Body() dto: UpdateMemberDto,
   ) {
     const orgId = await this.service.resolvePlatformOrganizationId();
-    return this.service.update(orgId, id, dto);
+    return this.service.update(orgId, id, dto, user.role);
   }
 
   @Post('members/:id/deactivate')
@@ -57,6 +58,6 @@ export class PlatformTeamController {
     @Param('id') id: string,
   ) {
     const orgId = await this.service.resolvePlatformOrganizationId();
-    return this.service.deactivate(orgId, user.userId, id);
+    return this.service.deactivate(orgId, user.userId, id, user.role);
   }
 }

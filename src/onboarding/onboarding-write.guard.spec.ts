@@ -3,17 +3,17 @@ import { OnboardingWriteGuard } from './onboarding-write.guard';
 
 describe('OnboardingWriteGuard',()=>{
   const guard=new OnboardingWriteGuard();
-  function context(method:string,path:string,role:'admin'|'staff'|'super_admin'){
+  function context(method:string,path:string,role:'vendor_admin'|'vendor_staff'|'super_admin'){
     return {switchToHttp:()=>({getRequest:()=>({method,path,user:{role}})})} as unknown as ExecutionContext;
   }
   it('allows staff to view company information',()=>{
-    expect(guard.canActivate(context('GET','/api/v1/onboarding','staff'))).toBe(true);
+    expect(guard.canActivate(context('GET','/api/v1/onboarding','vendor_staff'))).toBe(true);
   });
   it('rejects staff company changes',()=>{
-    expect(()=>guard.canActivate(context('PATCH','/api/v1/onboarding/company','staff'))).toThrow('Only vendor administrators');
+    expect(()=>guard.canActivate(context('PATCH','/api/v1/onboarding/company','vendor_staff'))).toThrow('Only vendor administrators');
   });
   it('allows administrators to update onboarding data',()=>{
-    expect(guard.canActivate(context('PATCH','/api/v1/onboarding/company','admin'))).toBe(true);
+    expect(guard.canActivate(context('PATCH','/api/v1/onboarding/company','vendor_admin'))).toBe(true);
   });
   it('allows super administrators to update vendor profile data',()=>{
     expect(guard.canActivate(context('PATCH','/api/v1/onboarding/company','super_admin'))).toBe(true);

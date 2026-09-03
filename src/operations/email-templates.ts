@@ -38,9 +38,12 @@ function displayName(firstName?: string) {
 function roleLabel(role?: string) {
   if (!role) return '';
   const value = role.trim().toLowerCase();
+  if (value === 'vendor_admin') return 'Vendor Admin';
+  if (value === 'vendor_staff') return 'Vendor Staff';
+  if (value === 'platform_admin') return 'Platform Admin';
+  if (value === 'platform_staff') return 'Platform Staff';
   if (value === 'admin') return 'Vendor Admin';
   if (value === 'staff') return 'Staff';
-  if (value === 'platform_admin') return 'Platform Admin';
   return role.trim();
 }
 

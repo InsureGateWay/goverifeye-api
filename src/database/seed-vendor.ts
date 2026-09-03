@@ -70,13 +70,13 @@ async function seedVendor() {
 
       const passwordHash = await argon2.hash(password, { type: argon2.argon2id })
       if (!user) {
-        user = users.create({ email, passwordHash, firstName, lastName, organizationId: organization.id, role: 'admin', isActive: true })
+        user = users.create({ email, passwordHash, firstName, lastName, organizationId: organization.id, role:'vendor_admin', isActive:true })
       } else {
         user.passwordHash = passwordHash
         user.firstName = firstName
         user.lastName = lastName
         user.organizationId = organization.id
-        user.role = 'admin'
+        user.role = 'vendor_admin'
         user.isActive = true
       }
       user = await users.save(user)
@@ -171,8 +171,8 @@ async function seedVendor() {
       if(!await openMarketBatches.existsBy({publicBatchId}))await openMarketBatches.save(openMarketBatches.create({publicBatchId,activationCodeHash:await argon2.hash('654321',{type:argon2.argon2id}),labelType:LabelType.Micro,quantity:2500,totalCost:36200,status:'available'}))
 
       let member = await members.findOneBy({ userId: user.id })
-      if (!member) member = members.create({ organizationId: organization.id, userId: user.id, firstName, lastName, email, role: TeamRole.Admin, status: 'active' })
-      else Object.assign(member, { organizationId: organization.id, firstName, lastName, email, role: TeamRole.Admin, status: 'active' })
+      if (!member) member = members.create({ organizationId: organization.id, userId: user.id, firstName, lastName, email, role: TeamRole.VendorAdmin, status: 'active' })
+      else Object.assign(member, { organizationId: organization.id, firstName, lastName, email, role: TeamRole.VendorAdmin, status: 'active' })
       await members.save(member)
     })
 

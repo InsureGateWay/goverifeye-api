@@ -14,7 +14,7 @@ export class OnboardingWriteGuard implements CanActivate {
     // are governance actions protected by their own super-admin role guard.
     const isPlatformApproval=/\/platform\/approvals\/onboarding(?:\/|$)/.test(request.path);
     const isOnboardingWrite=request.method!=='GET'&&!isPlatformApproval&&/\/onboarding(?:\/|$)/.test(request.path);
-    const canManageVendorProfile=request.user?.role===UserRole.Admin||request.user?.role===UserRole.SuperAdmin;
+    const canManageVendorProfile=request.user?.role===UserRole.VendorAdmin||request.user?.role===UserRole.SuperAdmin;
     if(isOnboardingWrite&&!canManageVendorProfile){
       throw new ForbiddenException('Only vendor administrators or super administrators can change company account details');
     }

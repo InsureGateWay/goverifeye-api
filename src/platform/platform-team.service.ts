@@ -73,7 +73,7 @@ export class PlatformTeamService {
               firstName: user.firstName,
               lastName: user.lastName,
               email: user.email,
-              role: TeamRole.Admin,
+              role: TeamRole.SuperAdmin,
               status: user.isActive ? 'active' : 'inactive',
             }),
           );
@@ -163,7 +163,7 @@ export class PlatformTeamService {
           firstName: user.firstName,
           lastName: user.lastName,
           email: user.email,
-          role: TeamRole.Admin,
+          role: TeamRole.SuperAdmin,
           status: user.isActive ? 'active' : 'inactive',
           createdAt: user.createdAt,
           updatedAt: user.updatedAt,
@@ -182,6 +182,13 @@ export class PlatformTeamService {
   }
 
   async invite(actorId: string, dto: InviteMemberDto) {
+    if (![TeamRole.PlatformAdmin, TeamRole.PlatformStaff].includes(dto.role)) {
+      throw new DomainError(
+        'Platform team members must be a platform administrator or platform staff member',
+        'ROLE_ASSIGNMENT_FORBIDDEN',
+        403,
+      );
+    }
     const orgId = await this.resolvePlatformOrganizationId();
     const email = dto.email.trim().toLowerCase();
     const sameEmail = Raw(
@@ -251,7 +258,14 @@ export class PlatformTeamService {
     };
   }
 
-  async update(orgId: string, id: string, dto: UpdateMemberDto) {
+  async update(orgId: string, id: string, dto: UpdateMemberDto, actorRole='super_admin') {
+    if (![TeamRole.PlatformAdmin, TeamRole.PlatformStaff].includes(dto.role)) {
+      throw new DomainError(
+        'Platform team members must be a platform administrator or platform staff member',
+        'ROLE_ASSIGNMENT_FORBIDDEN',
+        403,
+      );
+    }
     return this.db.transaction(async (manager) => {
       const members = manager.getRepository(TeamMemberEntity);
       const users = manager.getRepository(UserEntity);
@@ -277,11 +291,14 @@ export class PlatformTeamService {
             firstName: user.firstName,
             lastName: user.lastName,
             email: user.email,
-            role: TeamRole.Admin,
+            role: TeamRole.SuperAdmin,
             status: user.isActive ? 'active' : 'inactive',
           }),
         );
       }
+
+      if(actorRole==='platform_admin'&&row.role!=='platform_staff')throw new DomainError('Platform administrators can manage platform staff only','ROLE_ASSIGNMENT_FORBIDDEN',403);
+      if(actorRole==='platform_admin'&&dto.role!=='platform_staff')throw new DomainError('Platform administrators cannot assign administrator roles','ROLE_ASSIGNMENT_FORBIDDEN',403);
 
       Object.assign(row, dto);
       if (row.userId) {
@@ -297,7 +314,7 @@ export class PlatformTeamService {
     });
   }
 
-  async deactivate(orgId: string, actorId: string, id: string) {
+  async deactivate(orgId: string, actorId: string, id: string, actorRole='super_admin') {
     return this.db.transaction(async (manager) => {
       const members = manager.getRepository(TeamMemberEntity);
       const users = manager.getRepository(UserEntity);
@@ -316,6 +333,7 @@ export class PlatformTeamService {
             404,
           );
         }
+        if(actorRole==='platform_admin')throw new DomainError('Platform administrators cannot deactivate other administrators','ROLE_ASSIGNMENT_FORBIDDEN',403);
         if (user.id === actorId) {
           throw new DomainError(
             'You cannot deactivate your own account',
@@ -332,10 +350,12 @@ export class PlatformTeamService {
           firstName: user.firstName,
           lastName: user.lastName,
           email: user.email,
-          role: TeamRole.Admin,
+          role: TeamRole.SuperAdmin,
           status: 'inactive',
         });
       }
+
+      if(actorRole==='platform_admin'&&row.role!=='platform_staff')throw new DomainError('Platform administrators can deactivate platform staff only','ROLE_ASSIGNMENT_FORBIDDEN',403);
 
       if (row.userId === actorId) {
         throw new DomainError(
