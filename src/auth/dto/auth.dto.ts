@@ -102,5 +102,5 @@ export class TokenResponseDto {
 }
 export class VerifyLoginMfaDto { @IsUUID() challengeId!:string; @Matches(/^\d{6}$/) code!:string; @IsOptional() @IsEmail() email?:string; }
 export class ActionResponseDto { loggedOut?: boolean; revoked?: boolean; }
-export class CurrentUserResponseDto { id!: string; email!: string; firstName!: string; lastName!: string; phone?: string; organizationId!: string; role!: string; }
+export class CurrentUserResponseDto { id!: string; email!: string; firstName!: string; lastName!: string; phone?: string|null; jobTitle?:string|null; profileImageUrl?:string|null; organizationId!: string; role!: string; isActive!:boolean; mustChangePassword!:boolean; }
 export class SessionResponseDto { id!: string; createdAt!: Date; updatedAt!: Date; expiresAt!: Date; revokedAt?: Date; current!: boolean; }
