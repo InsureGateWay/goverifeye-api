@@ -13,6 +13,8 @@ import { DomainError } from '../common/domain-error';
 import { pageOf } from '../common/api-response';
 import { CurrentUser, RequestContext, submittedBy } from '../common/request-context';
 import { OrganizationEntity } from '../onboarding/onboarding.entity';
+import { OrganizationDocumentEntity } from '../onboarding/onboarding.entity';
+import { DocumentStorageService } from '../onboarding/document-storage.service';
 import { OnboardingWelcomeService } from '../onboarding/onboarding-welcome.service';
 import { ProductEntity } from '../products/product.entity';
 import { ProductStatus } from '../products/product.model';
@@ -32,6 +34,7 @@ export class ApprovalController {
   constructor(
     private readonly db: DataSource,
     private readonly welcome: OnboardingWelcomeService,
+    private readonly documentStorage: DocumentStorageService,
   ) {}
 
   @Get('queue')
@@ -116,6 +119,65 @@ export class ApprovalController {
       take: q.pageSize,
     });
     return pageOf(data, total, q.page, q.pageSize, q.sortBy, q.sortDirection);
+  }
+
+
+  /** Compliance documents uploaded during vendor onboarding. */
+  @Get('organizations/:id/documents')
+  async organizationDocuments(
+    @Param('id') id: string,
+    @Query() q: ReviewQueueDto,
+  ) {
+    const org = await this.db
+      .getRepository(OrganizationEntity)
+      .findOneBy({ id });
+    if (!org) {
+      throw new DomainError(
+        'Organization was not found',
+        'ORGANIZATION_NOT_FOUND',
+        404,
+      );
+    }
+    const [data, total] = await this.db
+      .getRepository(OrganizationDocumentEntity)
+      .findAndCount({
+        where: { organizationId: id },
+        order: { createdAt: q.sortDirection.toUpperCase() as 'ASC' | 'DESC' },
+        skip: (q.page - 1) * q.pageSize,
+        take: q.pageSize,
+      });
+    return pageOf(data, total, q.page, q.pageSize, q.sortBy, q.sortDirection);
+  }
+
+  @Get('organizations/:id/documents/:documentId/download')
+  async organizationDocumentDownload(
+    @Param('id') id: string,
+    @Param('documentId') documentId: string,
+  ) {
+    const org = await this.db
+      .getRepository(OrganizationEntity)
+      .findOneBy({ id });
+    if (!org) {
+      throw new DomainError(
+        'Organization was not found',
+        'ORGANIZATION_NOT_FOUND',
+        404,
+      );
+    }
+    const row = await this.db
+      .getRepository(OrganizationDocumentEntity)
+      .findOneBy({ id: documentId, organizationId: id });
+    if (!row) {
+      throw new DomainError('Document was not found', 'DOCUMENT_NOT_FOUND', 404);
+    }
+    if (row.status !== 'verified' && row.status !== 'uploaded') {
+      throw new DomainError(
+        'Document is not available for download',
+        'DOCUMENT_NOT_READY',
+        409,
+      );
+    }
+    return this.documentStorage.signedDownload(row.storageKey);
   }
 
   @Post('products/:id/decision')
