@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { Type } from '@nestjs/common';
 import { LoginDto, RefreshDto, RegisterDto, RequestOtpDto, VerifyOtpDto } from '../auth/dto/auth.dto';
-import { ActivateCodeDto, GenerateBatchDto, VerifyProductCodeDto } from '../codes/code.dto';
+import { GenerateBatchDto, VerifyProductCodeDto } from '../codes/code.dto';
 import { CreateExportJobDto, CreatePaymentDto, CreateSupportTicketDto, QuoteDto, UpdateSupportTicketDto } from '../commerce/commerce.dto';
 import { CompleteOnboardingDto, CreateDocumentDto, UpdateAddressDto, UpdateAdministratorDto, UpdateCompanyOnboardingDto, UpdateDocumentDto } from '../onboarding/onboarding.dto';
 import { ChangePasswordDto, UpdateCompanyDto, UpdateProfileDto } from '../operations/operations.dto';
@@ -11,7 +11,7 @@ import { AcceptInvitationDto, InviteMemberDto, UpdateMemberDto } from '../team/t
 
 const requestDtos: Type<unknown>[] = [
   RequestOtpDto, VerifyOtpDto, RegisterDto, LoginDto, RefreshDto,
-  GenerateBatchDto, ActivateCodeDto, VerifyProductCodeDto,
+  GenerateBatchDto, VerifyProductCodeDto,
   QuoteDto, CreatePaymentDto, CreateExportJobDto, CreateSupportTicketDto, UpdateSupportTicketDto,
   CompleteOnboardingDto, UpdateAddressDto, UpdateAdministratorDto, UpdateCompanyOnboardingDto, CreateDocumentDto, UpdateDocumentDto,
   ReviewDecisionDto, CreateProductDto, UpdateProductDto,

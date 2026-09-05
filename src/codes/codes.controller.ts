@@ -2,14 +2,17 @@ import { Body, Controller, Get, Headers, HttpCode, Param, Post, Req, Res } from 
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Public } from '../auth/public.decorator';
 import { CurrentUser, RequestContext } from '../common/request-context';
-import { ActivateCodeDto, BatchQueryDto, CodeQueryDto, GenerateBatchDto, OpenMarketLinkDto, OpenMarketLookupDto, OpenMarketVerifyDto, VerifyProductCodeDto } from './code.dto'; import { Query } from '@nestjs/common';
+import { BatchQueryDto, CodeQueryDto, GenerateBatchDto, OpenMarketLinkDto, OpenMarketLookupDto, OpenMarketVerifyDto, VerifyProductCodeDto } from './code.dto'; import { Query } from '@nestjs/common';
 import { CodesService } from './codes.service';
 import { Throttle } from '@nestjs/throttler';
 import { RequiresActivatedOrganization } from '../common/organization-activation.guard';
+import { SCAN_COOKIE_NAME, ScanIdentityService } from './scan-identity.service';
+
+function requestCookie(request:Request,name:string){const raw=request.headers.cookie;if(!raw)return;for(const part of raw.split(';')){const [key,...value]=part.trim().split('=');if(key===name)return decodeURIComponent(value.join('='))}return}
 
 @ApiTags('code-batches') @ApiBearerAuth() @Controller('code-batches')
 export class CodesController {
-  constructor(private readonly codes: CodesService) {}
+  constructor(private readonly codes: CodesService,private readonly scanIdentity:ScanIdentityService) {}
   @RequiresActivatedOrganization() @Post() generate(@CurrentUser() user: RequestContext,@Headers('idempotency-key')key:string|undefined,@Body() dto: GenerateBatchDto) { return this.codes.generateBatch(user.organizationId, user.userId, dto,key); }
   @Get() list(@CurrentUser() user: RequestContext, @Query() query: BatchQueryDto) { return this.codes.listBatches(user.organizationId, query); }
   @Get('summary') summary(@CurrentUser() user: RequestContext) { return this.codes.summary(user.organizationId); }
@@ -23,6 +26,6 @@ export class CodesController {
   @Post(':id/cancel') cancel(@CurrentUser()user:RequestContext,@Param('id')id:string){return this.codes.cancelBatch(user.organizationId,id)}
   @Post('codes/:id/suspend') suspend(@CurrentUser()user:RequestContext,@Param('id')id:string){return this.codes.setCodeStatus(user.organizationId,id,'suspended')}
   @Post('codes/:id/reactivate') reactivate(@CurrentUser()user:RequestContext,@Param('id')id:string){return this.codes.setCodeStatus(user.organizationId,id,'active')}
-  @Throttle({default:{limit:10,ttl:60000}}) @Post('codes/activate') @HttpCode(200) activate(@CurrentUser() user: RequestContext, @Body() dto: ActivateCodeDto) { return this.codes.activate(user.organizationId, user.userId, dto); }
-  @Public() @Throttle({default:{limit:30,ttl:60000}}) @Post('codes/verify') @HttpCode(200) verify(@Body() dto: VerifyProductCodeDto,@Req()request:Request) { return this.codes.verify(dto.verificationCode,{ip:request.ip,userAgent:request.get('user-agent'),location:dto.location,customerComplaint:dto.customerComplaint}); }
+  @Public() @Throttle({default:{limit:10,ttl:60000}}) @Post('codes/scan-session') @HttpCode(200) async scanSession(@Req()request:Request,@Res({passthrough:true})response:Response){const result=await this.scanIdentity.begin(requestCookie(request,SCAN_COOKIE_NAME),request.ip,request.get('user-agent'));const sameSite=(process.env.SCAN_COOKIE_SAME_SITE??'lax').toLowerCase() as 'lax'|'strict'|'none';response.cookie(SCAN_COOKIE_NAME,result.cookieValue,{httpOnly:true,secure:process.env.NODE_ENV==='production'||sameSite==='none',sameSite,maxAge:result.sessionExpiresInSeconds*1000,path:'/'});const{cookieValue,...safe}=result;void cookieValue;return safe}
+  @Public() @Throttle({default:{limit:30,ttl:60000}}) @Post('codes/verify') @HttpCode(200) verify(@Body() dto: VerifyProductCodeDto,@Req()request:Request) { return this.codes.verify(dto.verificationCode,{ip:request.ip,userAgent:request.get('user-agent'),location:dto.location,customerComplaint:dto.customerComplaint,scannerCookie:requestCookie(request,SCAN_COOKIE_NAME),nonce:dto.nonce,channel:dto.channel}); }
 }

@@ -22,6 +22,7 @@ import { OrganizationEntity } from '../onboarding/onboarding.entity';
 import { ProductEntity } from '../products/product.entity';
 import { RequestContext } from '../common/request-context';
 import { AuditLogEntity } from '../operations/operations.entity';
+import * as argon2 from 'argon2';
 
 function formatBatchRef(batchId: string, createdAt?: Date | string): string {
   const digits = batchId.replace(/\D/g, '');
@@ -76,8 +77,8 @@ export class PlatformManageCodesService {
     const [codesGenerated, activatedCodes, pendingActivation, scannedCodes] =
       await Promise.all([
         codeRepo.count(),
-        codeRepo.countBy({ status: VerificationCodeStatus.Active }),
-        codeRepo.countBy({ status: VerificationCodeStatus.Inactive }),
+        codeRepo.countBy({ status: VerificationCodeStatus.MarketActive }),
+        codeRepo.countBy({ status: VerificationCodeStatus.Allocated }),
         codeRepo.countBy({ verificationCount: MoreThan(0) }),
       ]);
     return {
@@ -115,7 +116,7 @@ export class PlatformManageCodesService {
             .select('code.batchId', 'batchId')
             .addSelect('COUNT(*)', 'total')
             .addSelect(
-              `SUM(CASE WHEN code.status = 'active' THEN 1 ELSE 0 END)`,
+              `SUM(CASE WHEN code.status = 'market_active' THEN 1 ELSE 0 END)`,
               'active',
             )
             .where('code.batchId IN (:...ids)', {
@@ -202,7 +203,7 @@ export class PlatformManageCodesService {
         .createQueryBuilder('code')
         .select('COUNT(*)', 'total')
         .addSelect(
-          `SUM(CASE WHEN code.status = 'active' THEN 1 ELSE 0 END)`,
+          `SUM(CASE WHEN code.status = 'market_active' THEN 1 ELSE 0 END)`,
           'active',
         )
         .addSelect('MAX(code.activatedAt)', 'activatedOn')
@@ -305,7 +306,7 @@ export class PlatformManageCodesService {
         const hasScans = row.verificationCount > 0;
         return {
           code: row.code,
-          status: row.status === VerificationCodeStatus.Active ? 'active' : 'inactive',
+          status: row.status === VerificationCodeStatus.MarketActive ? 'active' : 'inactive',
           scans: hasScans ? row.verificationCount : null,
           suspicious: hasScans
             ? Number(event?.suspiciousScans ?? 0)
@@ -366,7 +367,7 @@ export class PlatformManageCodesService {
       const event = eventMap.get(row.id);
       const hasScans = row.verificationCount > 0;
       const status =
-        row.status === VerificationCodeStatus.Active ? 'active' : row.status;
+        row.status === VerificationCodeStatus.MarketActive ? 'active' : row.status;
       return [
         batchRef,
         row.code,
@@ -393,23 +394,35 @@ export class PlatformManageCodesService {
     };
   }
 
-  async activateBatch(batchKey: string, user: RequestContext) {
-    const batch = await this.resolveBatch(batchKey);
-    return this.db.transaction(async (manager) => {
+  async activateBatch(batchKey: string, user: RequestContext, credential:string) {
+    const resolved = await this.resolveBatch(batchKey);
+    const outcome=await this.db.transaction(async (manager) => {
+      const batch=await manager.getRepository(CodeBatchEntity).createQueryBuilder('batch').addSelect('batch.activationCredentialHash').where('batch.id = :id',{id:resolved.id}).setLock('pessimistic_write').getOne();
+      if(!batch)throw new DomainError('Code batch was not found','BATCH_NOT_FOUND',404);
+      if(batch.status===BatchStatus.MarketActive)return{invalid:false as const,batchId:batch.id,activatedCodes:0,activatedAt:batch.activatedAt,alreadyActivated:true};
+      if(batch.status!==BatchStatus.Allocated||!batch.activationCredentialHash)throw new DomainError('This batch is not awaiting controlled activation','BATCH_NOT_ACTIVATABLE',409);
+      if(batch.activationAttempts>=5||!await argon2.verify(batch.activationCredentialHash,credential)){
+        batch.activationAttempts+=1;if(batch.activationAttempts>=5)batch.status=BatchStatus.Revoked;await manager.save(CodeBatchEntity,batch);
+        await manager.save(AuditLogEntity,manager.create(AuditLogEntity,{organizationId:user.organizationId,actorId:user.userId,action:'platform.batch.activation_failed',resourceType:'code_batch',resourceId:batch.id,status:'failure',metadata:{attempts:batch.activationAttempts}}));
+        return{invalid:true as const};
+      }
       const now = new Date();
       const result = await manager
         .createQueryBuilder()
         .update(VerificationCodeEntity)
-        .set({ status: VerificationCodeStatus.Active, activatedAt: now, activatedBy: user.userId })
+        .set({ status: VerificationCodeStatus.MarketActive, activatedAt: now, activatedBy: user.userId })
         .where('"batchId" = :batchId', { batchId: batch.id })
-        .andWhere('status = :status', { status: VerificationCodeStatus.Inactive })
+        .andWhere('status = :status', { status: VerificationCodeStatus.Allocated })
         .execute();
+      batch.status=BatchStatus.MarketActive;batch.activatedAt=now;batch.activatedBy=user.userId;batch.activationCredentialHash=null;await manager.save(CodeBatchEntity,batch);
       await manager.save(AuditLogEntity, manager.create(AuditLogEntity, {
         organizationId: user.organizationId, actorId: user.userId,
         action: 'platform.batch.activated', resourceType: 'code_batch', resourceId: batch.id,
         status: 'success', metadata: { activatedCodes: result.affected ?? 0 },
       }));
-      return { batchId: batch.id, activatedCodes: result.affected ?? 0, activatedAt: now };
+      return { invalid:false as const,batchId: batch.id, activatedCodes: result.affected ?? 0, activatedAt: now };
     });
+    if(outcome.invalid)throw new DomainError('The batch activation credential is invalid','BATCH_ACTIVATION_INVALID',401);
+    return outcome;
   }
 }

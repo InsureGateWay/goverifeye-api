@@ -109,9 +109,8 @@ export class GovernanceService {
   private isVerificationCodeLengthOption(namespace:string,key:string){return namespace==='codes'&&key==='verification_code_length';}
   private validateVerificationCodeLengthOption(namespace:string,key:string,value:unknown,organizationId?:string|null,isPublic?:boolean){
     if(!this.isVerificationCodeLengthOption(namespace,key))return;
-    if(organizationId)throw new DomainError('Verification-code length must be a global platform setting','OPTION_VALUE_INVALID',400);
-    if(isPublic)throw new DomainError('Verification-code length cannot be a public option','OPTION_VALUE_INVALID',400);
-    if(typeof value!=='number'||!Number.isInteger(value)||value<6||value>28)throw new DomainError('Verification-code length must be a whole number between 6 and 28','OPTION_VALUE_INVALID',400);
+    void value;void organizationId;void isPublic;
+    throw new DomainError('Production verification codes use the fixed GVE-16 format and cannot be configured','OPTION_VALUE_INVALID',400);
   }
   async publicOptions(namespace?:string){return this.db.getRepository(ApplicationOptionEntity).find({where:{...(namespace?{namespace}:{}),isPublic:true,isActive:true,organizationId:IsNull()},order:{namespace:'ASC',sortOrder:'ASC',label:'ASC'},select:{id:true,namespace:true,key:true,label:true,value:true,valueType:true,description:true,sortOrder:true,updatedAt:true}});}
   async allOptions(){return this.db.getRepository(ApplicationOptionEntity).find({order:{namespace:'ASC',sortOrder:'ASC',label:'ASC'}});}

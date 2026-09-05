@@ -143,9 +143,7 @@ export class PlatformGenerateCodeService {
       id: string;
       createdAt?: Date | string;
     };
-    const activationCode =
-      generated.credentials[0]?.activationCode ??
-      formatPublicBatchId(batch.id);
+    const activationCode = generated.batchActivationCredential ?? '';
 
     return {
       labels: dto.labels,

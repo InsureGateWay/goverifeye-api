@@ -1,10 +1,19 @@
-import { Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { Roles, UserRole } from '../auth/authorization';
 import { CodeQueryDto } from '../codes/code.dto';
 import { PlatformManageCodesService } from './platform-manage-codes.service';
 import { CurrentUser, RequestContext } from '../common/request-context';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsString, Matches } from 'class-validator';
+
+class ActivateBatchDto {
+  @ApiProperty({example:'12345678',description:'One-time batch/allocation activation credential.'})
+  @IsString()
+  @Matches(/^\d{6,16}$/)
+  credential!:string;
+}
 
 @ApiTags('platform-manage-codes')
 @ApiBearerAuth()
@@ -44,7 +53,7 @@ export class PlatformManageCodesController {
   }
 
   @Post('batches/:id/activate')
-  activateBatch(@CurrentUser() user: RequestContext, @Param('id') id: string) {
-    return this.service.activateBatch(id, user);
+  activateBatch(@CurrentUser() user: RequestContext, @Param('id') id: string, @Body() dto:ActivateBatchDto) {
+    return this.service.activateBatch(id, user, dto.credential);
   }
 }

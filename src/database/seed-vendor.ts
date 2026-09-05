@@ -9,7 +9,7 @@ import { TeamMemberEntity } from '../team/team.entity'
 import { TeamRole } from '../team/team.dto'
 import { ProductEntity } from '../products/product.entity'
 import { ProductStatus } from '../products/product.model'
-import { BatchStatus, CodeBatchEntity, OpenMarketBatchEntity, VerificationCodeEntity, VerificationCodeStatus } from '../codes/code.entity'
+import { BatchStatus, CodeBatchEntity, CodeNamespaceEntity, OpenMarketBatchEntity, VerificationCodeEntity, VerificationCodeStatus } from '../codes/code.entity'
 import { Fulfillment, LabelType } from '../codes/code.enums'
 import { CryptographicCodeGenerator } from '../codes/cryptographic-code-generator.service'
 
@@ -37,6 +37,7 @@ async function seedVendor() {
       const products = manager.getRepository(ProductEntity)
       const batches = manager.getRepository(CodeBatchEntity)
       const codes = manager.getRepository(VerificationCodeEntity)
+      const namespaces = manager.getRepository(CodeNamespaceEntity)
       const openMarketBatches=manager.getRepository(OpenMarketBatchEntity)
       let user = await users.findOneBy({ email })
       let organization = user
@@ -113,6 +114,8 @@ async function seedVendor() {
         { key: 'demo-sanitizer-pair-02', product: savedProducts[1]!, labelType: LabelType.Pair, fulfillment: Fulfillment.Preprinted, paperSize: 'Roll', logisticsService: 'GIG Logistics', manufacturingDate:'2026-06-12', expiryDate:'2028-06-12' },
       ]
 
+      let codeNamespace=await namespaces.findOneBy({organizationId:organization.id})
+      if(!codeNamespace){const allocated=await manager.query(`SELECT nextval('gve_namespace_sequence') AS value`);codeNamespace=await namespaces.save(namespaces.create({organizationId:organization.id,namespace:String(allocated[0]?.value).padStart(4,'0'),nextSerial:'1'}))}
       for (const definition of seededBatches) {
         let batch = await batches.findOneBy({ organizationId: organization.id, clientRequestId: definition.key })
         if (!batch) {
@@ -128,7 +131,9 @@ async function seedVendor() {
             manufacturingDate: definition.manufacturingDate,
             expiryDate: definition.expiryDate,
             quantity: 5,
-            status: BatchStatus.Generated,
+            activationMode:'self_print_digital',
+            status: BatchStatus.MarketActive,
+            activatedAt:new Date(),activatedBy:user.id,
           }))
         } else {
           Object.assign(batch, {
@@ -141,27 +146,31 @@ async function seedVendor() {
             manufacturingDate: definition.manufacturingDate,
             expiryDate: definition.expiryDate,
             quantity: 5,
-            status: BatchStatus.Generated,
+            activationMode:'self_print_digital',
+            status: BatchStatus.MarketActive,
+            activatedAt: new Date(),
+            activatedBy: user.id,
           })
           batch = await batches.save(batch)
         }
 
         const existingCount = await codes.countBy({ organizationId: organization.id, batchId: batch.id })
         for (let index = existingCount; index < 5; index += 1) {
-          let pair = codeGenerator.generatePair()
-          while (await codes.existsBy({ code: pair.verificationCode })) pair = codeGenerator.generatePair()
+          const pair = codeGenerator.generate(codeNamespace.namespace,codeNamespace.nextSerial,batch.id)
+          codeNamespace.nextSerial=(BigInt(codeNamespace.nextSerial)+1n).toString()
           await codes.save(codes.create({
             organizationId: organization.id,
             productId: definition.product.id,
             batchId: batch.id,
             code: pair.verificationCode,
-            activationCodeHash: pair.activationCodeHash,
-            status: VerificationCodeStatus.Active,
+            codeFormatVersion:pair.codeFormatVersion,keyVersion:pair.keyVersion,namespace:pair.namespace,internalSerial:pair.internalSerial,publicToken:pair.publicToken,luhnDigit:pair.luhnDigit,antiFabTag:pair.antiFabTag,allocationId:pair.allocationId,
+            status: VerificationCodeStatus.MarketActive,
             activatedAt: new Date(),
             activatedBy: user.id,
           }))
         }
       }
+      await namespaces.save(codeNamespace)
 
       for (const product of savedProducts) {
         product.totalCodes = await codes.countBy({ organizationId: organization.id, productId: product.id })

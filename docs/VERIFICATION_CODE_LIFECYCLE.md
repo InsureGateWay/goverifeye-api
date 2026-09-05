@@ -1,133 +1,60 @@
-# Verification Code Lifecycle
+# GVE-16 Verification Code Lifecycle
 
-This document explains how a product verification code is created, protected, activated, and checked by goVerifEye.
+This document supersedes every earlier goVerifEye verification-code design. Production labels use one fixed format: **16 numeric digits**, displayed as `NNNN TTTT TTTL SSSS`. Spaces are presentation only; the canonical QR and API value contains exactly 16 digits.
 
-## 1. Platform configuration
+## Code structure
 
-A platform administrator controls the length of newly generated verification codes through the database-backed option:
+| Part | Length | Purpose |
+| --- | ---: | --- |
+| `NNNN` | 4 | Controlled organization namespace. |
+| `TTTTTTT` | 7 | Public token created by a keyed, decimal-preserving Feistel permutation of the namespace's internal serial. |
+| `L` | 1 | Luhn check digit over `namespace + public token`, for quick typing/OCR error detection. |
+| `SSSS` | 4 | HMAC-SHA256 anti-fabrication tag, truncated to four decimal digits. |
 
-`codes.verification_code_length`
+The database allocates each organization one namespace and increments its seven-digit serial under a database lock. Unique constraints prevent reuse of a serial or public token within a namespace. The internal serial is never printed.
 
-The default is **16 digits**. The permitted range is **6 to 28 digits**. This is a global setting, cannot be public or disabled, and changes only affect new batches. Codes already issued continue to work at their original length.
+## Creation and cryptographic protection
 
-## 2. Batch creation
-
-An authenticated vendor requests a code batch for one of its active products. The request must include an idempotency key, which prevents a network retry from creating a second batch.
-
-The API checks that:
-
-- the caller belongs to the organization;
-- the organization and product are active;
-- the requested quantity is between 100 and 10,000 and within the configured server limit;
-- product dates are sensible; and
-- the same idempotency key has not already completed a batch.
-
-The batch, its codes, and the product counter are written in one database transaction. If any part fails, the whole operation is rolled back.
-
-## 3. Secure generation
-
-For each label, the backend creates two separate numeric values using Node.js cryptographic random generation:
-
-| Value | Purpose | Stored? |
-| --- | --- | --- |
-| Verification code | Public code printed on the product label and entered by a customer | Yes |
-| Activation code | Private code used by the vendor to activate the label | Only as a protected hash |
-
-The generator rejects codes that look too obvious:
-
-- more than two leading zeroes;
-- all digits the same, such as `111111111111`;
-- four or more repeated digits in a row;
-- ascending or descending digit runs of six or more, such as `123456` or `987654`.
-
-The database has a unique constraint on verification codes. The service also checks a new batch for duplicates before saving it.
-
-## 4. Protecting activation codes
-
-The activation code is never stored as plain text. Instead, the backend saves an HMAC-SHA256 value:
+The backend derives separate versioned keys for token permutation and HMAC from `GVE_CODE_MASTER_KEY`. The HMAC input is canonical and unambiguous:
 
 ```text
-HMAC key: CODE_ACTIVATION_PEPPER (server environment secret)
-HMAC message: verificationCode:activationCode
+UTF8("GVE16")
+|| U16BE(length(format_version)) || UTF8(format_version)
+|| ASCII(namespace) || ASCII(public_token)
+|| U16BE(length(allocation_context)) || UTF8(allocation_context)
 ```
 
-The activation code is returned only in the initial batch-generation response. A replayed idempotent request deliberately returns no credentials. The vendor must therefore store the original generated file securely.
+Each record stores the format/key versions, namespace, internal serial, public token, Luhn digit, HMAC tag, allocation ID, product-batch ID, and unit ID. The complete code is also stored for uniqueness and export. Key material is server-only and must never be returned, logged, or stored in the database.
 
-## 5. Activation
+## Allocation and activation
 
-To activate a label, an authenticated vendor submits its verification code and activation code. The API locks the code record while it checks it, then recreates the HMAC and compares the two hashes using a timing-safe comparison.
+The batch is the activation boundary; individual labels do not have activation passwords.
 
-On success, the code becomes `active` and records who activated it and when. On failure, the attempt count increases. After five failed attempts, the code is suspended. The activation endpoint is also rate-limited.
+- `self_print_digital`: generation is the deliberate activation event, so the batch and its codes become `market_active` immediately.
+- `controlled_physical_print`: generation leaves the batch and codes `allocated`. The server returns one random batch activation credential once and stores only its Argon2id hash. A super administrator activates the entire allocation with `POST /api/v1/platform/manage-codes/batches/{id}/activate` and `{ "credential": "..." }`.
 
-## 6. Customer verification
+Five failed batch-credential attempts revoke the allocation. Successful and failed activation attempts are written to the audit log. Lifecycle states are `generated`, `allocated`, `market_active`, `recalled`, `revoked`, and `retired`.
 
-Customers submit only the printed verification code. The public endpoint is rate-limited and accepts numeric codes from 6 to 28 digits, allowing old and newly configured code lengths to coexist.
+## Customer verification
 
-The API confirms that the code exists, is active, and belongs to an active product. It then returns the product-verification result, increments the scan count, and records a verification event.
+All QR, OCR, and manual entry paths call `POST /api/v1/code-batches/codes/verify` with the same canonical code. The backend performs these checks in order:
 
-## 7. Fraud and audit trail
+1. Remove whitespace and require exactly 16 digits.
+2. Validate the Luhn digit before database lookup.
+3. Look up the candidate by namespace and public token.
+4. Recompute and timing-safely compare the versioned HMAC tag.
+5. Confirm allocation, product-batch, unit, organization, and product bindings.
+6. Require both code and batch to be `market_active`, and require an active product.
+7. Record the scan and return the product verdict. Repeat-scan signals may return `review_recommended` without changing authenticity.
 
-Every successful verification records the time, supplied location/complaint, IP address, and user agent hash for risk analysis. Repeated scans and unusually frequent checks can be marked suspicious for review.
+An unknown code and a known-looking code with an invalid HMAC tag both return the same public `invalid` result. This prevents the API from becoming a code-enumeration oracle. Invalid submissions are audit-recorded by hash, not as raw candidate codes.
 
-Batch creation, activation, suspension, and related protected actions flow through the authenticated API and audit logging. This provides accountability without storing activation secrets in logs or the database.
+## Offline and OCR behavior
 
-## 8. Web and mobile offline checks
+Web and mobile clients may remove spaces, require 16 digits, and run Luhn locally. These checks only detect malformed input; they must never display a genuine/authentic verdict while offline. QR payloads contain the canonical digits. OCR is scan-to-fill only: crop to the label guide, extract a 16-digit candidate, run Luhn, show the candidate for confirmation, then call the backend.
 
-The web and mobile apps may perform a quick offline check before calling the API: the value must contain digits only and be **6 to 28 digits** long. This avoids unnecessary requests, but it does not verify that a code is real, active, or assigned to a product; only the backend can do that.
+## Operations and migration
 
-An administrator may change the current generation length anywhere within the 6–28 digit range without rebuilding either app. Both current and previously issued lengths should remain accepted so older labels continue to work.
+Required production settings are `GVE_CODE_MASTER_KEY` and `GVE_CODE_KEY_VERSION`. Previous keys needed for verification remain in `GVE_CODE_KEY_RING_JSON`. Token and HMAC keys are derived separately. Rotation changes the active version for newly generated codes while retained key versions validate existing GVE-16 records.
 
-If the agreed product requirement ever changes the supported range itself (for example, allowing fewer than 6 or more than 28 digits), the mobile app’s offline validation must be updated, rebuilt, tested, and released through Google Play and the Apple App Store. Store review and release timing can delay availability. The web app can be redeployed more quickly, but should still be updated and tested with the same policy.
-
-## 9. OCR scan-to-fill design
-
-OCR is a convenience feature, not offline proof of authenticity. It extracts a likely code from a product image; the backend remains responsible for deciding whether that code is real and active.
-
-### 1. Scan barcode or QR code first
-
-If the label contains a barcode or QR code that embeds the verification code, the app should use it before OCR. Barcode/QR scanning is faster and more accurate than reading printed text.
-
-### 2. Guide the camera to the correct area
-
-The scan screen should show a rectangular overlay labelled **“Place the verification number here.”** The user captures only this small part of the package, reducing irrelevant packaging text sent into OCR.
-
-### 3. Run OCR on the cropped image
-
-For mobile, run text recognition on the cropped image on the device. Before recognition, the app should:
-
-- crop to the camera guide;
-- correct rotation and perspective where possible;
-- convert to grayscale, increase contrast, and enlarge the crop; and
-- reject blurred or very dark captures and ask the user to retake the photo.
-
-### 4. Extract likely codes from noisy text
-
-The app should inspect all OCR text blocks and normalize only likely numeric candidates:
-
-- remove spaces and punctuation;
-- correct common OCR mistakes in a numeric candidate only: `O` to `0`, `I`/`l` to `1`, and `S` to `5`;
-- keep numeric strings between 6 and 28 digits; and
-- score candidates using OCR confidence, proximity to the camera-guide centre, and closeness to the currently configured generation length.
-
-The current configured length must not reject a different valid legacy length. For example, a 16-digit label can remain valid after new code batches start using 20 digits.
-
-### 5. Ask the user to confirm
-
-When there is one high-confidence candidate, prefill it for confirmation:
-
-```text
-We found: 482917305816
-[Verify code] [Edit]
-```
-
-When several candidates are plausible, show the best two or three choices and let the user select one. The app must not silently submit a low-confidence OCR result.
-
-### 6. Use the normal verification API
-
-Only after user confirmation should the app call the existing verification endpoint. When offline, it should say **“Code captured — connect to the internet to verify”** rather than claiming the product is genuine.
-
-### 7. Privacy and security
-
-OCR should run on-device by default and discard the image immediately after extraction. Product images must not be uploaded or logged during normal verification. Upload is allowed only when a user explicitly submits an image as fraud evidence. Images should be size-limited and stripped of metadata before any approved upload.
-
-The existing web frontend’s hard-coded 16-digit validation must be replaced with a 6–28 digit candidate filter. The current administrator-configured length is used to rank and describe candidates, not to reject valid older labels.
+The migration disables `codes.verification_code_length`; code length is no longer administrator-configurable. Pre-GVE-16 records are retained for history but changed to `retired`. Namespaces and serials are never recycled. Before production release, the decimal Feistel construction and supplied vectors require independent cryptographic review.
