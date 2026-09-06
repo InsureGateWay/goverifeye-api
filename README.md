@@ -17,9 +17,9 @@ All tenant-owned queries include `organizationId`. Business code depends on `Pro
 
 ## Verification-code lifecycle
 
-An active product belongs to one organization and can have many generation batches. Each batch belongs to exactly one product and contains individually unique verification-code records. The generator uses Node's operating-system-backed `crypto.randomInt`, preserves the 16-digit code as text, and commits the batch, codes, and product totals atomically.
+An active product belongs to one organization and can have many code allocations. GVE-16 generation uses a concurrency-safe namespace serial, keyed decimal permutation, Luhn check digit and server-recomputed HMAC tag. Codes remain 16-digit strings. New allocations use an internal UUIDv7 and a unique public `CB-` reference; codes, batch and product totals commit atomically.
 
-Each verification code starts `inactive` and has a separate numeric activation secret. Only an HMAC-SHA256 digest of that secret is stored. Raw activation secrets are returned once for the approved printing or fulfilment workflow. Five failed activation attempts suspend a code. Successful activation records the actor and timestamp. Public verification succeeds only when both the code and its associated product are active, and scan counters are updated transactionally.
+Every batch starts `allocated`. Self-print requires a separate, audited vendor activation confirmation. Controlled physical batches require platform release, vendor password re-authentication and a one-time eight-digit batch PIN revealed only in the Vendor Portal. PINs are never generated for printing or delivery; only a versioned, batch-bound HMAC digest is stored. Rolling failures trigger a 15-minute activation cooldown without suspending product codes. Activation binds units to the manufacturer's product lot. See [the v3.3.7 API and migration notes](docs/batch-activation-v3.3.7.md) for endpoints, configuration and frontend rollout requirements.
 
 ## Run
 

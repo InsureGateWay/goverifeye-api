@@ -1,7 +1,35 @@
 import { BeforeInsert, Column, Entity, Index, Unique } from 'typeorm'; import { randomUUID } from 'crypto'; import { BaseEntity } from '../database/base.entity'; import { BatchStatus, Fulfillment, LabelType, VerificationCodeStatus } from './code.enums';
 export { BatchStatus, VerificationCodeStatus } from './code.enums';
 @Entity('code_namespaces') export class CodeNamespaceEntity extends BaseEntity { @Column('uuid',{unique:true}) @Index() organizationId!:string; @Column({type:'char',length:4,unique:true}) @Index() namespace!:string; @Column({type:'bigint',default:'1'}) nextSerial!:string; }
-@Entity('code_batches') @Index(['organizationId','clientRequestId'],{unique:true}) export class CodeBatchEntity extends BaseEntity { @Column('uuid') @Index() organizationId!: string; @Column({nullable:true}) clientRequestId?:string; @Column('uuid') @Index() productId!: string; @Column() labelType!: LabelType; @Column() fulfillment!: Fulfillment; @Column() quantity!: number; @Column({ nullable: true }) paperSize?: string; @Column({ nullable: true }) logisticsService?: string; @Column({type:'date',nullable:true}) manufacturingDate?:string; @Column({type:'date',nullable:true}) expiryDate?:string; @Column({default:'self_print_digital'}) activationMode!:'controlled_physical_print'|'self_print_digital'; @Column({type:'varchar',nullable:true,select:false}) activationCredentialHash?:string|null; @Column({default:0}) activationAttempts!:number; @Column({type:'timestamp',nullable:true}) activatedAt?:Date|null; @Column('uuid',{nullable:true}) activatedBy?:string|null; @Column({ default: BatchStatus.Generating }) status!: BatchStatus; @Column({ default: 0 }) scanned!: number; @Column('uuid') generatedBy!: string; }
+@Entity('code_batches')
+@Index(['organizationId', 'clientRequestId'], { unique: true })
+export class CodeBatchEntity extends BaseEntity {
+  @Column('uuid') @Index() organizationId!: string;
+  @Column('uuid') allocationVendorId!: string;
+  @Column({ type: 'char', length: 13, unique: true }) batchReference!: string;
+  @Column({ nullable: true }) clientRequestId?: string;
+  @Column('uuid') @Index() productId!: string;
+  @Column('uuid', { nullable: true }) productBatchId?: string | null;
+  @Column({ type: 'char', length: 4, nullable: true }) namespace?: string | null;
+  @Column() labelType!: LabelType;
+  @Column() fulfillment!: Fulfillment;
+  @Column() quantity!: number;
+  @Column({ nullable: true }) paperSize?: string;
+  @Column({ nullable: true }) logisticsService?: string;
+  @Column({ type: 'date', nullable: true }) manufacturingDate?: string;
+  @Column({ type: 'date', nullable: true }) expiryDate?: string;
+  @Column({ default: 'self_print_digital' }) activationMode!: 'controlled_physical_print' | 'self_print_digital';
+  @Column({ type: 'timestamp', nullable: true }) releasedAt?: Date | null;
+  @Column('uuid', { nullable: true }) releasedBy?: string | null;
+  @Column({ type: 'char', length: 64, nullable: true, select: false }) activationPinDigest?: string | null;
+  @Column({ type: 'varchar', length: 32, nullable: true, select: false }) activationPepperVersion?: string | null;
+  @Column({ type: 'timestamp', nullable: true }) pinRevealedAt?: Date | null;
+  @Column({ type: 'timestamp', nullable: true }) activatedAt?: Date | null;
+  @Column('uuid', { nullable: true }) activatedBy?: string | null;
+  @Column({ default: BatchStatus.Generating }) status!: BatchStatus;
+  @Column({ default: 0 }) scanned!: number;
+  @Column('uuid') generatedBy!: string;
+}
 @Entity('verification_codes') @Unique('UQ_verification_codes_code', ['code']) @Index(['organizationId', 'productId'])
 export class VerificationCodeEntity extends BaseEntity {
   @Column('uuid') @Index() organizationId!: string; @Column('uuid') @Index() productId!: string; @Column('uuid') @Index() batchId!: string;
@@ -10,7 +38,7 @@ export class VerificationCodeEntity extends BaseEntity {
   @Column({ type: 'varchar', length: 20, default: VerificationCodeStatus.Allocated }) status!: VerificationCodeStatus;
   @Column({ default: 0 }) activationAttempts!: number; @Column({ default: 0 }) verificationCount!: number; @Column({ type: 'timestamp', nullable: true }) activatedAt?: Date;
   @Column('uuid', { nullable: true }) activatedBy?: string; @Column({ type: 'timestamp', nullable: true }) lastVerifiedAt?: Date;
-  @BeforeInsert() bindGve16Unit(){if(this.codeFormatVersion){this.id||=randomUUID();this.productBatchId??=this.batchId;this.unitId??=this.id;}}
+  @BeforeInsert() bindGve16Unit(){if(this.codeFormatVersion){this.id||=randomUUID();this.unitId??=this.id;}}
 }
 @Entity('open_market_batches') export class OpenMarketBatchEntity extends BaseEntity { @Column({unique:true}) @Index() publicBatchId!:string; @Column() activationCodeHash!:string; @Column() labelType!:LabelType; @Column() quantity!:number; @Column({type:'decimal',precision:12,scale:2}) totalCost!:number; @Column({default:'available'}) status!:'available'|'claimed'; @Column('uuid',{nullable:true}) claimedByOrganizationId?:string; @Column('uuid',{nullable:true}) claimedCodeBatchId?:string; @Column({type:'timestamp',nullable:true}) claimedAt?:Date; }
 @Entity('open_market_claims') @Index(['userId','inventoryBatchId']) export class OpenMarketClaimEntity extends BaseEntity { @Column('uuid') userId!:string; @Column('uuid') organizationId!:string; @Column('uuid') inventoryBatchId!:string; @Column('uuid',{nullable:true}) productId?:string; @Column({nullable:true}) otpHash?:string; @Column({type:'timestamp'}) expiresAt!:Date; @Column({default:0}) attempts!:number; @Column({default:false}) consumed!:boolean; }

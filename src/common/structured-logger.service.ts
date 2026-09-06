@@ -1,6 +1,6 @@
 import { Injectable, LoggerService, LogLevel } from '@nestjs/common';
 
-const sensitiveKeys = /^(authorization|cookie|password|secret|token|accessToken|refreshToken|apiKey|code)$/i;
+const sensitiveKeys = /^(authorization|cookie|password|secret|token|accessToken|refreshToken|apiKey|code|pin|activationPin|activationCode|credential|activationPinDigest|activationPepperVersion|activationCredentialHash)$/i;
 const enabledLevels: LogLevel[] = ['fatal', 'error', 'warn', 'log', 'debug', 'verbose'];
 
 export function redactLogValue(value: unknown, key?: string): unknown {
@@ -9,7 +9,7 @@ export function redactLogValue(value: unknown, key?: string): unknown {
     return value
       .replace(/Bearer\s+[^\s"]+/gi, 'Bearer [redacted]')
       .replace(/\bre_[A-Za-z0-9_-]{12,}\b/g, '[redacted]')
-      .replace(/(password|secret|token|api[_-]?key)=([^\s&]+)/gi, '$1=[redacted]');
+      .replace(/(password|secret|token|pin|activationPin|activationCode|credential|api[_-]?key)=([^\s&]+)/gi, '$1=[redacted]');
   }
   if (Array.isArray(value)) return value.map((entry) => redactLogValue(entry));
   if (value && typeof value === 'object') {

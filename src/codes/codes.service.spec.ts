@@ -1,3 +1,4 @@
+import { ProductBatchEntity } from './batch-activation.entity';
 import { CodesService } from './codes.service';
 import { CryptographicCodeGenerator } from './cryptographic-code-generator.service';
 import { BatchStatus, CodeBatchEntity, VerificationCodeEntity, VerificationCodeStatus } from './code.entity';
@@ -10,11 +11,11 @@ describe('GVE-16 verification pipeline',()=>{
   const scanIdentity={consume:jest.fn(async()=>({})),anonymousHash:jest.fn(()=>undefined)};
 
   function harness(record?:VerificationCodeEntity,batchStatus=BatchStatus.MarketActive){
-    const batch=record?{id:record.batchId,organizationId:record.organizationId,productId:record.productId,status:batchStatus}:undefined;
+    const batch=record?{id:record.batchId,organizationId:record.organizationId,productId:record.productId,allocationVendorId:record.organizationId,namespace:record.namespace,productBatchId:record.batchId,status:batchStatus}:undefined;
     const product=record?{id:record.productId,organizationId:record.organizationId,status:ProductStatus.Active,scanned:0,suspicious:0,name:'Test Product',description:'Test',form:'Unit',manufacturer:'Vendor'}:undefined;
     const manager={
       findOne:jest.fn(async()=>record),
-      findOneBy:jest.fn(async(type:unknown)=>type===CodeBatchEntity?batch:type===ProductEntity?product:undefined),
+      findOneBy:jest.fn(async(type:unknown)=>type===CodeBatchEntity?batch:type===ProductEntity?product:type===ProductBatchEntity?{id:record?.productBatchId}:undefined),
       countBy:jest.fn(async()=>0),
       create:jest.fn((_type:unknown,value:unknown)=>value),
       save:jest.fn(async(_type:unknown,value?:unknown)=>value),

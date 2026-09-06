@@ -1,3 +1,5 @@
+import { batchLookup } from '../codes/batch-format';
+import { CodeBatchEntity } from '../codes/code.entity';
 import { Body, Controller, Get, Headers, NotImplementedException, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -53,7 +55,10 @@ export class CommerceController {
 
   @Post('jobs') createJob(@CurrentUser() user: RequestContext, @Headers('idempotency-key') key: string | undefined, @Body() dto: CreateExportJobDto) {
     return this.reliability.execute(user.organizationId, user.userId, key, `job.${dto.type}`, () => this.db.transaction(async manager => {
-      const job = await manager.save(BackgroundJobEntity, manager.create(BackgroundJobEntity, { organizationId:user.organizationId, createdBy:user.userId, type:dto.type, payload:{ batchId:dto.batchId, format:dto.format }, status:'queued' }));
+      const lookup=dto.batchId?batchLookup(dto.batchId):null;
+      const batch=lookup?await manager.findOneBy(CodeBatchEntity,{...lookup,organizationId:user.organizationId}):null;
+      if(dto.type!=='report-export'&&!batch)throw new DomainError('Code batch was not found','BATCH_NOT_FOUND',404);
+      const job = await manager.save(BackgroundJobEntity, manager.create(BackgroundJobEntity, { organizationId:user.organizationId, createdBy:user.userId, type:dto.type, payload:{ batchId:batch?.id, format:dto.format }, status:'queued' }));
       await this.reliability.enqueue(manager, 'job.created', 'job', job.id, { jobId:job.id, type:job.type });
       return job;
     }));

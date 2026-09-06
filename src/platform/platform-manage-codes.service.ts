@@ -1,3 +1,4 @@
+import { batchLookup, displayBatchReference, masterQrPayload } from '../codes/batch-format';
 import { Injectable } from '@nestjs/common';
 import {
   DataSource,
@@ -22,27 +23,6 @@ import { OrganizationEntity } from '../onboarding/onboarding.entity';
 import { ProductEntity } from '../products/product.entity';
 import { RequestContext } from '../common/request-context';
 import { AuditLogEntity } from '../operations/operations.entity';
-import * as argon2 from 'argon2';
-
-function formatBatchRef(batchId: string, createdAt?: Date | string): string {
-  const digits = batchId.replace(/\D/g, '');
-  const seq = (digits.slice(-3) || '001').padStart(3, '0');
-  let yymmdd = '';
-  if (createdAt) {
-    const d = new Date(createdAt);
-    if (!Number.isNaN(d.getTime())) {
-      const yy = String(d.getFullYear()).slice(-2);
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      yymmdd = `${yy}${mm}${dd}`;
-    }
-  }
-  if (!yymmdd) {
-    const fromId = digits.slice(0, 6);
-    yymmdd = fromId.length === 6 ? fromId : '260801';
-  }
-  return `B-${yymmdd}-${seq}`;
-}
 
 function formatDisplayDate(value?: Date | string | null): string {
   if (!value) return '—';
@@ -149,7 +129,11 @@ export class PlatformManageCodesService {
 
       return {
         id: batch.id,
-        batchId: formatBatchRef(batch.id, batch.createdAt),
+        batchId: displayBatchReference(batch.batchReference),
+        batchReference: displayBatchReference(batch.batchReference),
+        lifecycleStatus: batch.status,
+        releasedAt: batch.releasedAt,
+        masterQrPayload: masterQrPayload(batch),
         vendorId: batch.organizationId,
         vendorName: org?.companyName || 'Organization',
         vendorEmail: org?.administrator?.email || '—',
@@ -165,23 +149,10 @@ export class PlatformManageCodesService {
   }
 
   private async resolveBatch(batchKey: string) {
-    const repo = this.db.getRepository(CodeBatchEntity);
-    const byId = await repo.findOneBy({ id: batchKey });
-    if (byId) return byId;
-
-    const batches = await repo.find({
-      order: { createdAt: 'DESC' },
-      take: 500,
-    });
-    const match = batches.find(
-      (batch) =>
-        formatBatchRef(batch.id, batch.createdAt) === batchKey ||
-        batch.id.startsWith(batchKey),
-    );
-    if (!match) {
-      throw new DomainError('Code batch was not found', 'BATCH_NOT_FOUND', 404);
-    }
-    return match;
+    const lookup=batchLookup(batchKey);
+    const batch=lookup?await this.db.getRepository(CodeBatchEntity).findOneBy(lookup):null;
+    if(!batch)throw new DomainError('Code batch was not found','BATCH_NOT_FOUND',404);
+    return batch;
   }
 
   async getBatch(batchKey: string) {
@@ -225,7 +196,11 @@ export class PlatformManageCodesService {
 
     return {
       id: batch.id,
-      batchId: formatBatchRef(batch.id, batch.createdAt),
+      batchId: displayBatchReference(batch.batchReference),
+        batchReference: displayBatchReference(batch.batchReference),
+        lifecycleStatus: batch.status,
+        releasedAt: batch.releasedAt,
+        masterQrPayload: masterQrPayload(batch),
       vendorName: org?.companyName || 'Organization',
       product: product?.name || '—',
       productUnit: product?.form || '—',
@@ -359,7 +334,7 @@ export class PlatformManageCodesService {
             }>()
         : [];
     const eventMap = new Map(events.map((row) => [row.codeId, row]));
-    const batchRef = formatBatchRef(batch.id, batch.createdAt);
+    const batchRef = displayBatchReference(batch.batchReference);
     const escape = (value: unknown) =>
       `"${String(value ?? '').replace(/"/g, '""')}"`;
 
@@ -394,35 +369,7 @@ export class PlatformManageCodesService {
     };
   }
 
-  async activateBatch(batchKey: string, user: RequestContext, credential:string) {
-    const resolved = await this.resolveBatch(batchKey);
-    const outcome=await this.db.transaction(async (manager) => {
-      const batch=await manager.getRepository(CodeBatchEntity).createQueryBuilder('batch').addSelect('batch.activationCredentialHash').where('batch.id = :id',{id:resolved.id}).setLock('pessimistic_write').getOne();
-      if(!batch)throw new DomainError('Code batch was not found','BATCH_NOT_FOUND',404);
-      if(batch.status===BatchStatus.MarketActive)return{invalid:false as const,batchId:batch.id,activatedCodes:0,activatedAt:batch.activatedAt,alreadyActivated:true};
-      if(batch.status!==BatchStatus.Allocated||!batch.activationCredentialHash)throw new DomainError('This batch is not awaiting controlled activation','BATCH_NOT_ACTIVATABLE',409);
-      if(batch.activationAttempts>=5||!await argon2.verify(batch.activationCredentialHash,credential)){
-        batch.activationAttempts+=1;if(batch.activationAttempts>=5)batch.status=BatchStatus.Revoked;await manager.save(CodeBatchEntity,batch);
-        await manager.save(AuditLogEntity,manager.create(AuditLogEntity,{organizationId:user.organizationId,actorId:user.userId,action:'platform.batch.activation_failed',resourceType:'code_batch',resourceId:batch.id,status:'failure',metadata:{attempts:batch.activationAttempts}}));
-        return{invalid:true as const};
-      }
-      const now = new Date();
-      const result = await manager
-        .createQueryBuilder()
-        .update(VerificationCodeEntity)
-        .set({ status: VerificationCodeStatus.MarketActive, activatedAt: now, activatedBy: user.userId })
-        .where('"batchId" = :batchId', { batchId: batch.id })
-        .andWhere('status = :status', { status: VerificationCodeStatus.Allocated })
-        .execute();
-      batch.status=BatchStatus.MarketActive;batch.activatedAt=now;batch.activatedBy=user.userId;batch.activationCredentialHash=null;await manager.save(CodeBatchEntity,batch);
-      await manager.save(AuditLogEntity, manager.create(AuditLogEntity, {
-        organizationId: user.organizationId, actorId: user.userId,
-        action: 'platform.batch.activated', resourceType: 'code_batch', resourceId: batch.id,
-        status: 'success', metadata: { activatedCodes: result.affected ?? 0 },
-      }));
-      return { invalid:false as const,batchId: batch.id, activatedCodes: result.affected ?? 0, activatedAt: now };
-    });
-    if(outcome.invalid)throw new DomainError('The batch activation credential is invalid','BATCH_ACTIVATION_INVALID',401);
-    return outcome;
+  async activateBatch(_batchKey: string, _user: RequestContext, _credential?: string):Promise<never> {
+    throw new DomainError('Activation requires the assigned vendor account. Release the batch, then activate through the Vendor Portal.','VENDOR_ACTIVATION_REQUIRED',403);
   }
 }

@@ -1,3 +1,4 @@
+import { BatchActivationService } from '../codes/batch-activation.service';
 import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
@@ -20,7 +21,7 @@ class ActivateBatchDto {
 @Roles(UserRole.SuperAdmin)
 @Controller('platform/manage-codes')
 export class PlatformManageCodesController {
-  constructor(private readonly service: PlatformManageCodesService) {}
+  constructor(private readonly service: PlatformManageCodesService,private readonly activation:BatchActivationService) {}
 
   @Get('metrics')
   getMetrics() {
@@ -51,6 +52,9 @@ export class PlatformManageCodesController {
     });
     res.send(csv);
   }
+
+  @Post('batches/:id/release')
+  releaseBatch(@CurrentUser() user:RequestContext,@Param('id')id:string){return this.activation.release(id,user)}
 
   @Post('batches/:id/activate')
   activateBatch(@CurrentUser() user: RequestContext, @Param('id') id: string, @Body() dto:ActivateBatchDto) {

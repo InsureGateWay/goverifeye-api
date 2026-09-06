@@ -1,3 +1,4 @@
+import { canonicalBatchId } from './batch-format';
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import { createHmac, randomInt, timingSafeEqual } from 'crypto';
@@ -96,15 +97,15 @@ export class CryptographicCodeGenerator {
 
   generateBatchCredential(): string {
     let value = '';
-    while (value.length < this.options.activationCredentialLength) {
-      const size = Math.min(8, this.options.activationCredentialLength - value.length);
+    while (value.length < 8) {
+      const size = Math.min(8, 8 - value.length);
       value += randomInt(0, 10 ** size).toString().padStart(size, '0');
     }
     return value;
   }
 
   private computeTag(namespace:string, publicToken:string, allocationContext:string, formatVersion:string,keyVersion:string): string {
-    const format = Buffer.from(formatVersion, 'utf8'), allocation = Buffer.from(allocationContext, 'utf8');
+    const format = Buffer.from(formatVersion, 'utf8'), allocation = Buffer.from(canonicalBatchId(allocationContext), 'utf8');
     const formatLength = Buffer.alloc(2), allocationLength = Buffer.alloc(2);
     formatLength.writeUInt16BE(format.length); allocationLength.writeUInt16BE(allocation.length);
     const input = Buffer.concat([Buffer.from('GVE16','utf8'),formatLength,format,Buffer.from(namespace+publicToken,'ascii'),allocationLength,allocation]);

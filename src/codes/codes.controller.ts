@@ -1,3 +1,6 @@
+import { BatchActivationService } from './batch-activation.service';
+import { ActivateCodeBatchDto, RevealBatchPinDto } from './batch-activation.dto';
+import { Roles, UserRole } from '../auth/authorization';
 import { Body, Controller, Get, Headers, HttpCode, Param, Post, Req, Res } from '@nestjs/common'; import type { Request, Response } from 'express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Public } from '../auth/public.decorator';
@@ -12,8 +15,17 @@ function requestCookie(request:Request,name:string){const raw=request.headers.co
 
 @ApiTags('code-batches') @ApiBearerAuth() @Controller('code-batches')
 export class CodesController {
-  constructor(private readonly codes: CodesService,private readonly scanIdentity:ScanIdentityService) {}
+  constructor(private readonly codes: CodesService,private readonly scanIdentity:ScanIdentityService,private readonly activation:BatchActivationService) {}
   @RequiresActivatedOrganization() @Post() generate(@CurrentUser() user: RequestContext,@Headers('idempotency-key')key:string|undefined,@Body() dto: GenerateBatchDto) { return this.codes.generateBatch(user.organizationId, user.userId, dto,key); }
+  @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin) @Post(':id/activation-pin/reveal') @HttpCode(200)
+  revealPin(@CurrentUser()user:RequestContext,@Param('id')id:string,@Body()dto:RevealBatchPinDto,@Req()request:Request,@Res({passthrough:true})response:Response){
+    response.set({'Cache-Control':'no-store, private','Pragma':'no-cache'});
+    return this.activation.reveal(id,user,dto,request.ip??'unknown');
+  }
+  @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin) @Post(':id/activate') @HttpCode(200)
+  activate(@CurrentUser()user:RequestContext,@Param('id')id:string,@Body()dto:ActivateCodeBatchDto,@Req()request:Request){
+    return this.activation.activate(id,user,dto,request.ip??'unknown');
+  }
   @Get() list(@CurrentUser() user: RequestContext, @Query() query: BatchQueryDto) { return this.codes.listBatches(user.organizationId, query); }
   @Get('summary') summary(@CurrentUser() user: RequestContext) { return this.codes.summary(user.organizationId); }
   @Get(':id/export') async export(@CurrentUser()user:RequestContext,@Param('id')id:string,@Res()res:Response){const result=await this.codes.exportCsv(user.organizationId,id);res.attachment(result.filename).type('text/csv').send(result.csv);}

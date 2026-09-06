@@ -1,3 +1,4 @@
+import { displayBatchReference, masterQrPayload } from '../codes/batch-format';
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { DataSource, Not } from 'typeorm';
@@ -14,25 +15,6 @@ import { PlatformGenerateBatchDto } from './platform-generate-code.dto';
 
 const PLATFORM_ORG_NAME = 'goVerifEye Platform Ops';
 const PLACEHOLDER_PRODUCT = 'General Product';
-
-function formatPublicBatchId(batchId: string): string {
-  const digits = batchId.replace(/\D/g, '').padEnd(16, '0').slice(0, 16);
-  return [
-    digits.slice(0, 4),
-    digits.slice(4, 8),
-    digits.slice(8, 12),
-    digits.slice(12, 16),
-  ].join('-');
-}
-
-function formatActivationCode(value: string): string {
-  const digits = value.replace(/\D/g, '');
-  if (digits.length <= 4) return digits;
-  if (digits.length <= 8) {
-    return `${digits.slice(0, 4)}-${digits.slice(4)}`;
-  }
-  return formatPublicBatchId(digits);
-}
 
 function formatDisplayDateTime(value?: Date | string | null): string {
   if (!value) return '—';
@@ -108,7 +90,8 @@ export class PlatformGenerateCodeService {
       );
     }
 
-    const product = await this.resolveProduct(dto.vendorId, actorId);
+    const product = await this.db.getRepository(ProductEntity).findOneBy({id:dto.productId,organizationId:dto.vendorId,status:ProductStatus.Active});
+    if(!product)throw new DomainError('An approved vendor product is required','PRODUCT_NOT_ACTIVE',409);
     const labelType = resolveLabelType(dto.labels);
     const unitPrice =
       dto.unitPrice ?? (await this.pricing.getUnitPrice(labelType));
@@ -139,11 +122,7 @@ export class PlatformGenerateCodeService {
       actor?.email ||
       'Platform admin';
 
-    const batch = generated.batch as {
-      id: string;
-      createdAt?: Date | string;
-    };
-    const activationCode = generated.batchActivationCredential ?? '';
+    const batch = generated.batch;
 
     return {
       labels: dto.labels,
@@ -152,36 +131,13 @@ export class PlatformGenerateCodeService {
       vendorName: dto.vendorName || org.companyName,
       unitPrice,
       estimatedCost,
-      batchId: formatPublicBatchId(batch.id),
-      activationCode: formatActivationCode(activationCode),
+      batchId: displayBatchReference(batch.batchReference),
+      batchReference: displayBatchReference(batch.batchReference),
+      masterQrPayload: masterQrPayload(batch),
       generatedOn: formatDisplayDateTime(batch.createdAt),
       generatedBy,
       status: 'awaiting_activation' as const,
     };
   }
 
-  private async resolveProduct(organizationId: string, actorId: string) {
-    const products = this.db.getRepository(ProductEntity);
-    const existing = await products.findOne({
-      where: {
-        organizationId,
-        status: ProductStatus.Active,
-      },
-      order: { createdAt: 'ASC' },
-    });
-    if (existing) return existing;
-
-    return products.save(
-      products.create({
-        organizationId,
-        name: PLACEHOLDER_PRODUCT,
-        description:
-          'Platform-generated placeholder product for admin code batches.',
-        form: 'General',
-        manufacturer: '—',
-        status: ProductStatus.Active,
-        createdBy: actorId,
-      }),
-    );
-  }
 }

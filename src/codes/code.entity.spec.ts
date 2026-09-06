@@ -27,7 +27,7 @@ describe('code entity metadata', () => {
 
     await (dataSource as unknown as { buildMetadatas(): Promise<void> }).buildMetadatas();
 
-    expect(dataSource.getMetadata(CodeBatchEntity).findColumnWithPropertyName('activationCredentialHash')?.type).toBe('varchar');
+    expect(dataSource.getMetadata(CodeBatchEntity).findColumnWithPropertyName('activationPinDigest')?.type).toBe('char');
     expect(dataSource.getMetadata(VerificationEventEntity).findColumnWithPropertyName('submittedCodeHash')?.type).toBe('varchar');
   });
 });
