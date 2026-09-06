@@ -4,6 +4,7 @@ import { PageQueryDto } from '../common/page-query.dto';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateChangeRequestDto {
+  @IsString() @Length(2, 100) category!: string;
   @IsString() @Length(3, 4000) details!: string;
   @IsOptional() @IsObject() requestedChanges?: Record<string, unknown>;
 }

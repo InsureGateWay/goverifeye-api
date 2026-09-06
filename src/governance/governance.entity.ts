@@ -5,6 +5,7 @@ import { AuditedEntity } from '../database/audited.entity';
 @Index(['organizationId', 'status', 'createdAt'])
 export class OrganizationChangeRequestEntity extends AuditedEntity {
   @Column('uuid') @Index() organizationId!: string;
+  @Column({ type: 'varchar', length: 100, default: 'Other' }) category!: string;
   @Column({ type: 'text' }) details!: string;
   @Column({ type: 'jsonb', default: () => "'{}'::jsonb" }) requestedChanges!: Record<string, unknown>;
   @Column({ type: 'varchar', length: 24, default: 'pending' }) status!: string;
