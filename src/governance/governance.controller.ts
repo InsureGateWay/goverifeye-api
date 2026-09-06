@@ -29,6 +29,7 @@ export class GovernanceController {
   @Roles(UserRole.SuperAdmin) @Get('platform/options/:id/history') optionHistory(@Param('id')id:string){return this.service.optionHistoryList(id);}
 
   @Post('settings/change-requests') createChange(@CurrentUser()u:RequestContext,@Body()dto:CreateChangeRequestDto){return this.service.createChangeRequest(u,dto);}
+  @Get('settings/2fa/status') mfaStatus(@CurrentUser()u:RequestContext){return this.service.mfaStatus(u);}
   @Post('settings/2fa/enroll') enrollMfa(@CurrentUser()u:RequestContext){return this.service.beginMfa(u);}
   @Post('settings/2fa/verify') verifyMfa(@CurrentUser()u:RequestContext,@Body()dto:MfaCodeDto){return this.service.verifyMfa(u,dto.code);}
   @Post('settings/2fa/disable') disableMfa(@CurrentUser()u:RequestContext,@Body()dto:MfaDisableDto){return this.service.disableMfa(u,dto.code,dto.password);}
@@ -65,8 +66,8 @@ export class GovernanceController {
   @Roles(UserRole.SuperAdmin) @Get('platform/audit-exceptions') exceptions(@Query()q:AuditExceptionQueryDto){return this.service.listExceptions(q);}
   @Roles(UserRole.SuperAdmin) @Post('platform/audit-exceptions') createException(@CurrentUser()u:RequestContext,@Body()dto:CreateAuditExceptionDto){return this.service.createException(u,dto);}
   @Roles(UserRole.SuperAdmin) @Post('platform/audit-exceptions/:id/close') closeException(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:ResolveAuditExceptionDto){return this.service.resolveException(u,id,dto);}
-  @Roles(UserRole.SuperAdmin) @Get('platform/audit-logs/export') @Header('Content-Type','text/csv; charset=utf-8') async platformAuditExport(@Query()q:ExportQueryDto,@Res()res:Response){res.attachment('platform-audit.csv').send(await this.service.auditCsv(q.limit,true));}
-  @Roles(UserRole.Admin) @Get('audit-logs/export') @Header('Content-Type','text/csv; charset=utf-8') async vendorAuditExport(@Query()q:ExportQueryDto,@Res()res:Response){res.attachment('audit.csv').send(await this.service.auditCsv(q.limit));}
+  @Roles(UserRole.SuperAdmin) @Get('platform/audit-logs/export') @Header('Content-Type','text/csv; charset=utf-8') async platformAuditExport(@Query()q:ExportQueryDto,@Res()res:Response){res.attachment('platform-audit.csv').send(await this.service.auditCsv(q,true));}
+  @Roles(UserRole.Admin) @Get('audit-logs/export') @Header('Content-Type','text/csv; charset=utf-8') async vendorAuditExport(@CurrentUser()u:RequestContext,@Query()q:ExportQueryDto,@Res()res:Response){res.attachment('audit.csv').send(await this.service.auditCsv(q,false,u.organizationId));}
 
   @Roles(UserRole.SuperAdmin) @Get('platform/system-health/overview') health(){return this.service.systemHealth();}
   @Roles(UserRole.SuperAdmin) @Post('platform/system-health/incidents') createIncident(@CurrentUser()u:RequestContext,@Body()dto:CreateIncidentDto){return this.service.createIncident(u,dto);}

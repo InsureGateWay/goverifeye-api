@@ -38,6 +38,12 @@ export class PlatformAuditLogsService {
     if (q.actorId) {
       qb.andWhere('audit.actorId = :actorId', { actorId: q.actorId });
     }
+    if (q.actor) {
+      qb.andWhere(
+        `(LOWER(CONCAT(COALESCE(actor.firstName,''), ' ', COALESCE(actor.lastName,''))) LIKE :actor OR LOWER(COALESCE(actor.email,'')) LIKE :actor)`,
+        { actor: `%${q.actor.toLowerCase()}%` },
+      );
+    }
     if (q.action) {
       qb.andWhere('audit.action = :action', { action: q.action });
     }

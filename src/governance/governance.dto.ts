@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDefined, IsEmail, IsIn, IsInt, IsObject, IsOptional, IsString, IsUrl, IsUUID, Length, Max, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsDefined, IsEmail, IsIn, IsInt, IsObject, IsOptional, IsString, IsUrl, IsUUID, Length, Max, MaxLength, Min } from 'class-validator';
 import { PageQueryDto } from '../common/page-query.dto';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -88,6 +88,14 @@ export class MfaCodeDto { @IsString() @Length(6, 8) code!: string; }
 export class MfaDisableDto extends MfaCodeDto { @IsString() password!: string; }
 export class ExportQueryDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100000) limit = 10000;
+  @IsOptional() @IsUUID() actorId?:string;
+  @IsOptional() @IsString() @MaxLength(200) actor?:string;
+  @IsOptional() @IsString() action?:string;
+  @IsOptional() @IsString() resourceType?:string;
+  @IsOptional() @IsString() status?:string;
+  @IsOptional() @IsString() search?:string;
+  @IsOptional() @IsDateString() from?:string;
+  @IsOptional() @IsDateString() to?:string;
 }
 export class OptionQueryDto extends PageQueryDto {
   @IsOptional() @IsString() namespace?: string;
