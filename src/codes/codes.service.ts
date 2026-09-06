@@ -1,3 +1,4 @@
+import type { VerifyCodeResponseDto } from '../customer/customer.contract';
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import { createHash, randomInt, randomUUID } from 'crypto';
@@ -67,9 +68,10 @@ export class CodesService {
     });}catch(error){if(error instanceof DomainError)throw error;throw new ConflictException('The batch could not be generated safely. No codes were committed.');}
   }
 
-  async verify(verificationCode:string,context:{ip?:string;userAgent?:string;location?:string;customerComplaint?:string;scannerCookie?:string;nonce?:string;channel?:string}={}){
-    return this.dataSource.transaction(async manager=>{
+  async verify(verificationCode:string,context:{ip?:string;userAgent?:string;location?:string;customerComplaint?:string;scannerCookie?:string;nonce?:string;channel?:string;shopperId?:string}={}, transactionManager?:EntityManager){
+    const work = async (manager:EntityManager):Promise<VerifyCodeResponseDto>=>{
       const identity=await this.scanIdentity.consume(manager,context.scannerCookie,context.nonce),ipHash=this.scanIdentity.anonymousHash(context.ip),userAgentHash=this.scanIdentity.anonymousHash(context.userAgent),submittedCodeHash=createHash('sha256').update(String(verificationCode)).digest('hex');
+      if(context.shopperId)identity.scannerHash=this.scanIdentity.anonymousHash('shopper:'+context.shopperId);
       const candidate=this.generator.parseCandidate(verificationCode);
       if(!candidate||!this.generator.hasValidLuhn(candidate)){await this.recordInvalid(manager,{identity,ipHash,userAgentHash,submittedCodeHash,context});return this.invalidResult(identity);}
       const record=await manager.findOne(VerificationCodeEntity,{where:{namespace:candidate.namespace,publicToken:candidate.publicToken},lock:{mode:'pessimistic_write'}});
@@ -77,7 +79,11 @@ export class CodesService {
       if(!record||record.codeFormatVersion!==this.options.formatVersion||record.code!==candidate.canonical||record.antiFabTag!==candidate.antiFabTag||!keyedValid){await this.recordInvalid(manager,{identity,ipHash,userAgentHash,submittedCodeHash,context});return this.invalidResult(identity);}
       const batch=await manager.findOneBy(CodeBatchEntity,{id:record.batchId,organizationId:record.organizationId,productId:record.productId});
       if(!batch||record.allocationId!==batch.id||record.productBatchId!==batch.id||record.unitId!==record.id){await this.recordInvalid(manager,{identity,ipHash,userAgentHash,submittedCodeHash,context});return this.invalidResult(identity);}
-      if(record.status!==VerificationCodeStatus.MarketActive||batch?.status!==BatchStatus.MarketActive)return{valid:false,status:record.status===VerificationCodeStatus.Allocated?'unactivated':record.status,...this.nonce(identity)};
+      if(record.status!==VerificationCodeStatus.MarketActive||batch.status!==BatchStatus.MarketActive){
+        const lifecycle:string[]=[record.status,batch.status];
+        const status=lifecycle.includes('recalled')?'recalled':lifecycle.includes('revoked')?'revoked':lifecycle.includes('retired')?'retired':record.status!==VerificationCodeStatus.MarketActive?record.status:batch.status;
+        return{valid:false,status:status==='allocated'?'unactivated':status,...this.nonce(identity)};
+      }
       const product=await manager.findOneBy(ProductEntity,{id:record.productId,organizationId:record.organizationId});
       if(!product||product.status!==ProductStatus.Active)return{valid:false,status:'product_unavailable',...this.nonce(identity)};
       const since=new Date(Date.now()-10*60_000);
@@ -92,7 +98,8 @@ export class CodesService {
       const outcome=riskScore>=70?'suspicious':'valid';record.verificationCount+=1;record.lastVerifiedAt=new Date();await manager.save(VerificationCodeEntity,record);product.scanned+=1;if(outcome==='suspicious')product.suspicious+=1;await manager.save(ProductEntity,product);
       await manager.save(VerificationEventEntity,manager.create(VerificationEventEntity,{organizationId:record.organizationId,productId:record.productId,codeId:record.id,outcome,channel:context.channel??'manual',submittedCodeHash,location:context.location,customerComplaint:context.customerComplaint,ipHash,userAgentHash,scannerHash:identity.scannerHash,riskScore,riskReasons:reasons}));
       return{valid:true,status:'market_active',firstVerification:record.verificationCount===1,verificationCount:record.verificationCount,outcome,risk:outcome==='suspicious'?'review_recommended':'low',...this.nonce(identity),product:{id:product.id,name:product.name,description:product.description,form:product.form,manufacturer:product.manufacturer,imageUrl:product.imageUrl}};
-    });
+    };
+    return transactionManager ? work(transactionManager) : this.dataSource.transaction(work);
   }
 
   async listBatches(organizationId:string,query:BatchQueryDto){const allowed=new Set(['createdAt','quantity','status','labelType']),sort=allowed.has(query.sortBy)?query.sortBy:'createdAt',qb=this.dataSource.getRepository(CodeBatchEntity).createQueryBuilder('batch').leftJoin(ProductEntity,'product','product.id = batch.productId AND product.organizationId = batch.organizationId').addSelect('product.name','productName').where('batch.organizationId = :organizationId',{organizationId});if(query.productId)qb.andWhere('batch.productId = :productId',{productId:query.productId});if(query.labelType)qb.andWhere('batch.labelType = :labelType',{labelType:query.labelType});if(query.fulfillment)qb.andWhere('batch.fulfillment = :fulfillment',{fulfillment:query.fulfillment});if(query.status)qb.andWhere('batch.status = :status',{status:query.status});if(query.search)qb.andWhere('(LOWER(product.name) LIKE :search OR CAST(batch.id AS text) LIKE :search)',{search:`%${query.search.toLowerCase()}%`});qb.orderBy(`batch.${sort}`,query.sortDirection.toUpperCase()as'ASC'|'DESC').skip((query.page-1)*query.pageSize).take(query.pageSize);const total=await qb.clone().skip(undefined).take(undefined).getCount(),{entities,raw}=await qb.getRawAndEntities();return pageOf(await Promise.all(entities.map(async(row,index)=>({...row,productName:raw[index]?.productName,totalCost:await this.batchCost(row)}))),total,query.page,query.pageSize,query.sortBy,query.sortDirection)}

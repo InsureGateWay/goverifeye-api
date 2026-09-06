@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+import { json } from 'express';
 import { randomUUID } from 'crypto'; import type { NextFunction,Request,Response } from 'express';
 import { AppModule } from './app.module';
 import type { AppOptions } from './config/app.config';
@@ -26,6 +27,7 @@ async function bootstrap() {
   app.useLogger(new StructuredLoggerService());
   const options = app.get(ConfigService).getOrThrow<AppOptions>('app');
   app.use(helmet());
+  app.use('/api/v1/customer/concerns', json({ limit: '1500kb' }));
   app.use((request:Request,response:Response,next:NextFunction)=>{const correlationId=String(request.headers['x-correlation-id']??randomUUID());request.headers['x-correlation-id']=correlationId;response.setHeader('x-correlation-id',correlationId);next();});
   app.enableCors({ origin: options.corsOrigins, credentials: true });
   app.setGlobalPrefix(options.apiPrefix);
