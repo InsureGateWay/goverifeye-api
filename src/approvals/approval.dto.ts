@@ -36,11 +36,12 @@ export class OrganizationListQueryDto extends PageQueryDto {
       'approved',
       'rejected',
       'changes_requested',
+      'deactivated',
     ],
     example: 'approved',
   })
   @IsOptional()
-  @IsIn(['draft', 'submitted', 'approved', 'rejected', 'changes_requested'])
+  @IsIn(['draft', 'submitted', 'approved', 'rejected', 'changes_requested', 'deactivated'])
   status?: string;
 
   @IsIn(['createdAt', 'updatedAt', 'status', 'companyName'])

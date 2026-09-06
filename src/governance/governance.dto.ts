@@ -37,6 +37,8 @@ export class FraudCaseQueryDto extends PageQueryDto {
   @IsOptional() @IsIn(['critical', 'high', 'medium', 'low']) severity?: string;
   @IsOptional() @IsIn(['open', 'investigating', 'contained', 'resolved', 'dismissed']) status?: string;
   @IsOptional() @IsString() category?: string;
+  @IsOptional() @IsDateString() from?: string;
+  @IsOptional() @IsDateString() to?: string;
   @IsIn(['createdAt', 'updatedAt', 'severity', 'status']) override sortBy = 'createdAt';
 }
 export class CreateFraudCaseDto {

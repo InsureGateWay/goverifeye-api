@@ -408,6 +408,8 @@ export class GovernanceService {
     if (q.severity) qb.andWhere('c.severity = :severity', { severity: q.severity });
     if (q.status) qb.andWhere('c.status = :status', { status: q.status });
     if (q.category) qb.andWhere('c.category = :category', { category: q.category });
+    if (q.from) qb.andWhere('c.createdAt >= :from', { from: new Date(q.from) });
+    if (q.to) qb.andWhere('c.createdAt <= :to', { to: new Date(q.to) });
     if (q.search) qb.andWhere(new Brackets((x) => x.where('c.title ILIKE :s').orWhere('c.description ILIKE :s')), { s: `%${q.search}%` });
     qb.orderBy(`c.${q.sortBy}`, q.sortDirection.toUpperCase() as 'ASC'|'DESC').skip((q.page - 1) * q.pageSize).take(q.pageSize);
     const [items, total] = await qb.getManyAndCount();

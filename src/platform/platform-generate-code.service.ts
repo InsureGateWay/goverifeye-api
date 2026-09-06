@@ -90,7 +90,11 @@ export class PlatformGenerateCodeService {
       );
     }
 
-    const product = await this.db.getRepository(ProductEntity).findOneBy({id:dto.productId,organizationId:dto.vendorId,status:ProductStatus.Active});
+    const product = await this.db.getRepository(ProductEntity).findOneBy({
+      id: dto.productId,
+      organizationId: dto.vendorId,
+      status: ProductStatus.Active,
+    });
     if(!product)throw new DomainError('An approved vendor product is required','PRODUCT_NOT_ACTIVE',409);
     const labelType = resolveLabelType(dto.labels);
     const unitPrice =
@@ -129,6 +133,8 @@ export class PlatformGenerateCodeService {
       quantity: dto.quantity,
       vendorId: dto.vendorId,
       vendorName: dto.vendorName || org.companyName,
+      productId: product.id,
+      productName: product.name,
       unitPrice,
       estimatedCost,
       batchId: displayBatchReference(batch.batchReference),
