@@ -29,9 +29,9 @@ export class CodesController {
   @Get() list(@CurrentUser() user: RequestContext, @Query() query: BatchQueryDto) { return this.codes.listBatches(user.organizationId, query); }
   @Get('summary') summary(@CurrentUser() user: RequestContext) { return this.codes.summary(user.organizationId); }
   @Get(':id/export') async export(@CurrentUser()user:RequestContext,@Param('id')id:string,@Res()res:Response){const result=await this.codes.exportCsv(user.organizationId,id);res.attachment(result.filename).type('text/csv').send(result.csv);}
-  @Post('open-market/lookup') openMarketLookup(@CurrentUser()user:RequestContext,@Body()dto:OpenMarketLookupDto){return this.codes.openMarketLookup(user,dto)}
-  @Post('open-market/:claimId/link') openMarketLink(@CurrentUser()user:RequestContext,@Param('claimId')claimId:string,@Body()dto:OpenMarketLinkDto){return this.codes.openMarketLink(user,claimId,dto)}
-  @Post('open-market/:claimId/verify') openMarketVerify(@CurrentUser()user:RequestContext,@Param('claimId')claimId:string,@Body()dto:OpenMarketVerifyDto){return this.codes.openMarketVerify(user,claimId,dto)}
+  @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin) @Throttle({default:{limit:10,ttl:60000}}) @Post('open-market/lookup') openMarketLookup(@CurrentUser()user:RequestContext,@Body()dto:OpenMarketLookupDto){return this.codes.openMarketLookup(user,dto)}
+  @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin) @Throttle({default:{limit:3,ttl:60000}}) @Post('open-market/:claimId/link') openMarketLink(@CurrentUser()user:RequestContext,@Param('claimId')claimId:string,@Body()dto:OpenMarketLinkDto){return this.codes.openMarketLink(user,claimId,dto)}
+  @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin) @Throttle({default:{limit:10,ttl:60000}}) @Post('open-market/:claimId/verify') openMarketVerify(@CurrentUser()user:RequestContext,@Param('claimId')claimId:string,@Body()dto:OpenMarketVerifyDto){return this.codes.openMarketVerify(user,claimId,dto)}
   @Get(':id') get(@CurrentUser() user: RequestContext, @Param('id') id: string) { return this.codes.getBatch(user.organizationId, id); }
   @Get(':id/codes') listCodes(@CurrentUser() user: RequestContext, @Param('id') id: string, @Query() query: CodeQueryDto) { return this.codes.listCodes(user.organizationId, id, query); }
   @Get('codes/:id/details') codeDetails(@CurrentUser() user: RequestContext, @Param('id') id: string) { return this.codes.getCodeDetails(user.organizationId, id); }

@@ -52,3 +52,30 @@ export class PlatformGenerateBatchDto {
   @IsNumber()
   estimatedCost?: number;
 }
+
+export class PlatformGenerateOpenMarketBatchDto {
+  @ApiProperty({ example: ['micro'], isArray: true })
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsIn(['micro', 'main'], { each: true })
+  labels!: Array<'micro' | 'main'>;
+
+  @ApiProperty({ minimum: 100, maximum: 10000, example: 5000 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(100)
+  @Max(10000)
+  quantity!: number;
+
+  @ApiPropertyOptional({ example: 14.25 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  unitPrice?: number;
+
+  @ApiPropertyOptional({ example: 71250 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  estimatedCost?: number;
+}

@@ -11,9 +11,10 @@ import { ProductStatus } from '../products/product.model';
 import { AuditLogEntity } from '../operations/operations.entity';
 import { RequestContext } from '../common/request-context';
 import { CompleteBatchActivationSpec1725700000000 } from '../database/migrations/1725700000000-complete-batch-activation-spec';
+import { EnableOpenMarketInventory1726000000000 } from '../database/migrations/1726000000000-enable-open-market-inventory';
 import { BatchActivationService } from './batch-activation.service';
 import { BatchActivationEventEntity, BatchActivationLimitEntity, ProductBatchEntity } from './batch-activation.entity';
-import { CodeBatchEntity, CodeNamespaceEntity, VerificationCodeEntity, VerificationEventEntity } from './code.entity';
+import { CodeBatchEntity, CodeNamespaceEntity, OpenMarketBatchEntity, OpenMarketClaimEntity, VerificationCodeEntity, VerificationEventEntity } from './code.entity';
 import { BatchStatus, Fulfillment, LabelType, VerificationCodeStatus } from './code.enums';
 import { CodesService } from './codes.service';
 import { CryptographicCodeGenerator } from './cryptographic-code-generator.service';
@@ -39,8 +40,8 @@ integration('batch activation against PostgreSQL',()=>{
     const url=new URL(testUrl!);
     if(!['localhost','127.0.0.1'].includes(url.hostname)||!url.pathname.startsWith('/batch_spec'))throw new Error('Use a dedicated local batch_spec database');
     const folder=join(__dirname,'../database/migrations');
-    const migrations=readdirSync(folder).filter(file=>file.endsWith('.ts')&&!file.startsWith('172570')).flatMap(file=>Object.values(require(join(folder,file))).filter(value=>typeof value==='function')) as Function[];
-    db=new DataSource({type:'postgres',url:testUrl,entities:[UserEntity,OrganizationEntity,ProductEntity,AuditLogEntity,CodeBatchEntity,CodeNamespaceEntity,VerificationCodeEntity,VerificationEventEntity,ProductBatchEntity,BatchActivationLimitEntity,BatchActivationEventEntity],migrations,logging:false});
+    const migrations=readdirSync(folder).filter(file=>file.endsWith('.ts')&&!file.startsWith('172570')&&!file.startsWith('172600')).flatMap(file=>Object.values(require(join(folder,file))).filter(value=>typeof value==='function')) as Function[];
+    db=new DataSource({type:'postgres',url:testUrl,entities:[UserEntity,OrganizationEntity,ProductEntity,AuditLogEntity,CodeBatchEntity,CodeNamespaceEntity,OpenMarketBatchEntity,OpenMarketClaimEntity,VerificationCodeEntity,VerificationEventEntity,ProductBatchEntity,BatchActivationLimitEntity,BatchActivationEventEntity],migrations,logging:false});
     await db.initialize();
     const existing=await db.query("SELECT count(*)::int AS count FROM information_schema.tables WHERE table_schema='public'");
     if(existing[0].count!==0)throw new Error('Integration tests require a fresh disposable database');
@@ -57,9 +58,9 @@ integration('batch activation against PostgreSQL',()=>{
     await db.query('INSERT INTO code_batches (id,"organizationId","productId","labelType",fulfillment,quantity,status,"generatedBy","activationMode","activationCredentialHash") VALUES ($1,$2,$3,$4,$5,1,$6,$7,$8,$9)',[legacyId,org,product,'main','preprinted','allocated',actor,'controlled_physical_print','old-hash']);
     await db.query('INSERT INTO verification_codes (id,"organizationId","productId","batchId",code,"codeFormatVersion","keyVersion",namespace,"internalSerial","publicToken","luhnDigit","antiFabTag","allocationId","productBatchId","unitId",status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,1,$9,$10,$11,$4,$4,$1,$12)',[codeId,org,product,legacyId,legacyCode,'3.3.3','1','4827',generated.publicToken,generated.luhnDigit,generated.antiFabTag,'allocated']);
     const runner=db.createQueryRunner();await runner.startTransaction();
-    try{await new CompleteBatchActivationSpec1725700000000().up(runner);await runner.commitTransaction();}catch(error){await runner.rollbackTransaction();throw error;}finally{await runner.release();}
+    try{await new CompleteBatchActivationSpec1725700000000().up(runner);await new EnableOpenMarketInventory1726000000000().up(runner);await runner.commitTransaction();}catch(error){await runner.rollbackTransaction();throw error;}finally{await runner.release();}
     activation=new BatchActivationService(db,pinOptions);
-    codes=new CodesService(db,new CryptographicCodeGenerator(options),options,{} as never,{batchCost:async()=>0} as never,{} as never,{consume:async()=>({}),anonymousHash:()=>undefined} as never);
+    codes=new CodesService(db,new CryptographicCodeGenerator(options),options,{enqueue:async()=>({})} as never,{batchCost:async()=>0} as never,{render:async(_manager:unknown,_key:string,_variables:unknown,fallback:()=>unknown)=>fallback()} as never,{consume:async()=>({}),anonymousHash:()=>undefined} as never);
   });
   afterAll(async()=>{if(db?.isInitialized)await db.destroy()});
 
@@ -70,7 +71,7 @@ integration('batch activation against PostgreSQL',()=>{
     const product=await db.getRepository(ProductEntity).save({organizationId,name:'Test product',description:'Test',form:'Unit',manufacturer:'Test vendor',status:ProductStatus.Active,createdBy:userId});
     const actor:RequestContext={organizationId,userId,sessionId:randomUUID(),role:'vendor_admin'};
     const generated=await codes.generateBatch(organizationId,userId,{productId:product.id,labelType:LabelType.Main,fulfillment,quantity:100,paperSize:'Roll'},randomUUID());
-    return {actor,batch:generated.batch,generated,source:randomUUID()};
+    return {actor,product,batch:generated.batch,generated,source:randomUUID()};
   }
   async function reveal(f:Awaited<ReturnType<typeof fixture>>){return activation.reveal(f.batch.batchReference,f.actor,{password,reason:'First authorised reveal'},f.source)}
   async function activate(f:Awaited<ReturnType<typeof fixture>>,pin?:string,service=activation){return service.activate(displayBatchReference(f.batch.batchReference),f.actor,{confirm:true,productBatchReference:'LOT-001',password,pin:pin?.replace(/\s/g,'')},f.source)}
@@ -162,6 +163,22 @@ integration('batch activation against PostgreSQL',()=>{
     expect(await db.getRepository(BatchActivationEventEntity).countBy({batchId:f.batch.id,action:'activated'})).toBe(1);
     await expect(db.query('DELETE FROM batch_activation_events WHERE "batchId"=$1',[f.batch.id])).rejects.toThrow('append-only');
   });
+  it('binds pre-generated open-market inventory to the verified vendor exactly once',async()=>{
+    await db.getRepository(OrganizationEntity).save({id:platform.organizationId,companyName:'goVerifEye Platform Ops',registrationNumber:platform.organizationId,industry:'platform',country:'NG',administrator:{},address:{},documents:[],status:'approved'} as never);
+    await db.getRepository(UserEntity).save({id:platform.userId,organizationId:platform.organizationId,email:`${platform.userId}@example.test`,passwordHash,firstName:'Platform',lastName:'Admin',role:'platform_admin',isActive:true});
+    const inventoryProduct=await db.getRepository(ProductEntity).save({organizationId:platform.organizationId,name:'General Product',description:'Inventory',form:'Unassigned',manufacturer:'goVerifEye',status:ProductStatus.Active,createdBy:platform.userId});
+    const generated=await codes.generateBatch(platform.organizationId,platform.userId,{productId:inventoryProduct.id,labelType:LabelType.Micro,fulfillment:Fulfillment.Preprinted,quantity:100,paperSize:'Roll'},`open-market:${randomUUID()}`);
+    const activationCode='65432178',publicBatchId='8567-5654-8645-9875';
+    await db.getRepository(OpenMarketBatchEntity).save({publicBatchId,activationCodeHash:await argon2.hash(activationCode),labelType:LabelType.Micro,quantity:100,totalCost:1000,status:'available',claimedCodeBatchId:generated.batch.id});
+    const vendor=await fixture();
+    const lookup=await codes.openMarketLookup(vendor.actor,{batchId:publicBatchId,activationCode});
+    const link=await codes.openMarketLink(vendor.actor,lookup.claimId,{productId:vendor.product.id});
+    const activated=await codes.openMarketVerify(vendor.actor,lookup.claimId,{code:link.code!});
+    expect(activated).toMatchObject({batchId:generated.batch.id,productId:vendor.product.id,activated:true});
+    expect(await db.getRepository(VerificationCodeEntity).countBy({batchId:generated.batch.id,organizationId:vendor.actor.organizationId,productId:vendor.product.id,status:VerificationCodeStatus.MarketActive})).toBe(100);
+    await expect(codes.openMarketLookup(vendor.actor,{batchId:publicBatchId,activationCode})).rejects.toMatchObject({code:'OPEN_MARKET_BATCH_INVALID'});
+    await expect(db.query('UPDATE code_batches SET "allocationVendorId"=$1,"organizationId"=$1 WHERE id=$2',[randomUUID(),generated.batch.id])).rejects.toThrow('immutable');
+  });
   it('serializes competing reveals and activation so only the latest PIN works once',async()=>{
     const f=await fixture();await activation.release(f.batch.id,platform);
     const pins=await Promise.all([reveal(f),reveal(f)]);
@@ -172,11 +189,11 @@ integration('batch activation against PostgreSQL',()=>{
     expect(results.map(r=>r.activatedCodes).sort((a,b)=>a-b)).toEqual([0,100]);
     expect(await db.getRepository(BatchActivationEventEntity).countBy({batchId:f.batch.id,action:'activated'})).toBe(1);
   });
-  it('rejects namespace tampering, immutable vendor reassignment, and legacy claims',async()=>{
+  it('rejects namespace tampering, assigned-batch reassignment, and unavailable claims',async()=>{
     const f=await fixture(Fulfillment.SelfPrint);
     await expect(db.query('UPDATE code_batches SET "allocationVendorId"=$1,"organizationId"=$1 WHERE id=$2',[randomUUID(),f.batch.id])).rejects.toThrow('immutable');
     await db.query('UPDATE code_namespaces SET namespace=$1 WHERE "organizationId"=$2',['9998',f.actor.organizationId]);
     await expect(activate(f)).rejects.toMatchObject({code:'BATCH_BINDING_INVALID'});
-    await expect(codes.openMarketVerify(f.actor,randomUUID(),{code:'123456'})).rejects.toMatchObject({code:'OPEN_MARKET_CLAIM_DISABLED'});
+    await expect(codes.openMarketVerify(f.actor,randomUUID(),{code:'123456'})).rejects.toMatchObject({code:'OPEN_MARKET_OTP_INVALID'});
   });
 });

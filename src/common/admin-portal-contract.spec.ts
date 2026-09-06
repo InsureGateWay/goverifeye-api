@@ -2,7 +2,10 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { OrganizationListQueryDto } from '../approvals/approval.dto';
 import { FraudCaseQueryDto } from '../governance/governance.dto';
-import { PlatformGenerateBatchDto } from '../platform/platform-generate-code.dto';
+import {
+  PlatformGenerateBatchDto,
+  PlatformGenerateOpenMarketBatchDto,
+} from '../platform/platform-generate-code.dto';
 import { TeamRole, UpdateMemberDto } from '../team/team.dto';
 
 describe('admin portal request contracts', () => {
@@ -32,6 +35,27 @@ describe('admin portal request contracts', () => {
 
     expect(await validate(dto, { whitelist: true, forbidNonWhitelisted: true })).toEqual([]);
     expect(dto.productId).toBe('9e38c56a-cdf2-4dc4-aa88-ea7cbff2fadd');
+  });
+
+  it('accepts open-market generation without vendor or product fields', async () => {
+    const dto = plainToInstance(PlatformGenerateOpenMarketBatchDto, {
+      labels: ['micro', 'main'],
+      quantity: 5000,
+      unitPrice: 14.25,
+      estimatedCost: 71250,
+    });
+
+    expect(await validate(dto, { whitelist: true, forbidNonWhitelisted: true })).toEqual([]);
+  });
+
+  it('rejects vendor fields on the open-market generation contract', async () => {
+    const dto = plainToInstance(PlatformGenerateOpenMarketBatchDto, {
+      labels: ['micro'],
+      quantity: 5000,
+      vendorId: '319968e2-458f-440e-8c68-91dcf8261c07',
+    });
+
+    expect(await validate(dto, { whitelist: true, forbidNonWhitelisted: true })).not.toEqual([]);
   });
 
   it('accepts deactivated as an organization status filter', async () => {

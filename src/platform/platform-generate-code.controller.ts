@@ -10,7 +10,10 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { randomUUID } from 'crypto';
 import { Roles, UserRole } from '../auth/authorization';
 import { CurrentUser, RequestContext } from '../common/request-context';
-import { PlatformGenerateBatchDto } from './platform-generate-code.dto';
+import {
+  PlatformGenerateBatchDto,
+  PlatformGenerateOpenMarketBatchDto,
+} from './platform-generate-code.dto';
 import { PlatformGenerateCodeService } from './platform-generate-code.service';
 
 @ApiTags('platform-generate-code')
@@ -36,5 +39,18 @@ export class PlatformGenerateCodeController {
         ? idempotencyKey
         : randomUUID();
     return this.service.createBatch(user.userId, dto, key);
+  }
+
+  @Post('open-market-batches')
+  createOpenMarketBatch(
+    @CurrentUser() user: RequestContext,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() dto: PlatformGenerateOpenMarketBatchDto,
+  ) {
+    const key =
+      idempotencyKey && idempotencyKey.length >= 8
+        ? idempotencyKey
+        : randomUUID();
+    return this.service.createOpenMarketBatch(user, dto, key);
   }
 }

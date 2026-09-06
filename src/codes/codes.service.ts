@@ -4,7 +4,8 @@ import { AuditLogEntity } from '../operations/operations.entity';
 import type { VerifyCodeResponseDto } from '../customer/customer.contract';
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
-import { createHash, randomUUID } from 'crypto';
+import { createHash, randomInt, randomUUID } from 'crypto';
+import * as argon2 from 'argon2';
 import { DataSource, EntityManager, ILike, In, MoreThan, MoreThanOrEqual } from 'typeorm';
 import codeGenerationConfig from '../config/code-generation.config';
 import { DomainError } from '../common/domain-error';
@@ -14,13 +15,14 @@ import { UserEntity } from '../auth/auth.entity';
 import { BatchQueryDto, CodeQueryDto, GenerateBatchDto, OpenMarketLinkDto, OpenMarketLookupDto, OpenMarketVerifyDto } from './code.dto';
 import { pageOf } from '../common/api-response';
 import { toOrder } from '../common/page-query.dto';
-import { BatchStatus, CodeBatchEntity, CodeNamespaceEntity, VerificationCodeEntity, VerificationCodeStatus, VerificationEventEntity } from './code.entity';
+import { BatchStatus, CodeBatchEntity, CodeNamespaceEntity, OpenMarketBatchEntity, OpenMarketClaimEntity, VerificationCodeEntity, VerificationCodeStatus, VerificationEventEntity } from './code.entity';
 import { CryptographicCodeGenerator, GeneratedGve16Code, GVE16_FORMAT } from './cryptographic-code-generator.service';
 import { ReliabilityService } from '../operations/reliability.service';
 import type { RequestContext } from '../common/request-context';
 import { Fulfillment } from './code.enums';
 import { PricingService } from '../commerce/pricing.service';
 import { EmailTemplateService } from '../operations/email-template.service';
+import { verificationCodeEmail } from '../operations/email-templates';
 import { ScanIdentityService } from './scan-identity.service';
 
 export interface GeneratedCredential { verificationCode:string;displayCode:string;qrPayload:string }
@@ -47,26 +49,35 @@ export class CodesService {
   }
 
   async generateBatch(organizationId:string,actorId:string,input:GenerateBatchDto,clientRequestId?:string){
+    try {
+      return await this.dataSource.transaction((manager) =>
+        this.generateBatchInTransaction(manager, organizationId, actorId, input, clientRequestId),
+      );
+    } catch (error) {
+      if (error instanceof DomainError) throw error;
+      throw new ConflictException('The batch could not be generated safely. No codes were committed.');
+    }
+  }
+
+  async generateBatchInTransaction(manager:EntityManager,organizationId:string,actorId:string,input:GenerateBatchDto,clientRequestId?:string){
     if(!clientRequestId||clientRequestId.length<8||clientRequestId.length>128)throw new DomainError('A valid Idempotency-Key header is required','IDEMPOTENCY_KEY_REQUIRED',400);
-    const prior=await this.dataSource.getRepository(CodeBatchEntity).findOneBy({organizationId,clientRequestId});
+    const prior=await manager.findOneBy(CodeBatchEntity,{organizationId,clientRequestId});
     if(prior)return{batch:prior,credentials:[],replayed:true,batchReference:displayBatchReference(prior.batchReference),masterQrPayload:masterQrPayload(prior)};
     if(input.quantity>this.options.maxCodesPerBatch)throw new DomainError(`A batch cannot exceed ${this.options.maxCodesPerBatch} codes`,'BATCH_LIMIT_EXCEEDED');
     if(input.manufacturingDate&&input.expiryDate&&new Date(input.expiryDate)<=new Date(input.manufacturingDate))throw new DomainError('Expiry date must be after the manufacturing date','INVALID_BATCH_DATES',400);
-    try{return await this.dataSource.transaction(async manager=>{
-      const product=await manager.findOne(ProductEntity,{where:{id:input.productId,organizationId},lock:{mode:'pessimistic_write'}});
-      if(!product)throw new DomainError('Product was not found','PRODUCT_NOT_FOUND',404);
-      if(product.status!==ProductStatus.Active)throw new DomainError('Codes can only be generated for an active product','PRODUCT_NOT_ACTIVE',409);
-      const activationMode=input.fulfillment===Fulfillment.Preprinted?'controlled_physical_print':'self_print_digital';
-      let batch=await manager.save(CodeBatchEntity,manager.create(CodeBatchEntity,{id:newCodeBatchId(),batchReference:newBatchReference(),allocationVendorId:organizationId,organizationId,clientRequestId,productId:product.id,generatedBy:actorId,labelType:input.labelType,fulfillment:input.fulfillment,paperSize:input.paperSize,logisticsService:input.logisticsService,manufacturingDate:input.manufacturingDate,expiryDate:input.expiryDate,quantity:input.quantity,activationMode,status:BatchStatus.Generating}));
-      const generated=await this.allocateCodes(manager,organizationId,batch.id,input.quantity);
-      batch.namespace=generated[0]!.namespace;
-      const rows=generated.map(item=>{const id=randomUUID();return manager.create(VerificationCodeEntity,{id,organizationId,productId:product.id,batchId:batch.id,code:item.verificationCode,codeFormatVersion:item.codeFormatVersion,keyVersion:item.keyVersion,namespace:item.namespace,internalSerial:item.internalSerial,publicToken:item.publicToken,luhnDigit:item.luhnDigit,antiFabTag:item.antiFabTag,allocationId:item.allocationId,productBatchId:null,unitId:id,status:VerificationCodeStatus.Allocated})});
-      for(let start=0;start<rows.length;start+=1000)await manager.insert(VerificationCodeEntity,rows.slice(start,start+1000));
-      batch.status=BatchStatus.Allocated;batch=await manager.save(CodeBatchEntity,batch);
-      await manager.insert(AuditLogEntity,{organizationId,actorId,action:'batch.generated',resourceType:'code_batch',resourceId:batch.id,status:'success'});
-      product.totalCodes+=input.quantity;await manager.save(ProductEntity,product);
-      return{batch,credentials:generated.map(({verificationCode})=>({verificationCode,displayCode:this.displayCode(verificationCode),qrPayload:this.qrPayload(verificationCode)})),batchReference:displayBatchReference(batch.batchReference),masterQrPayload:masterQrPayload(batch)};
-    });}catch(error){if(error instanceof DomainError)throw error;throw new ConflictException('The batch could not be generated safely. No codes were committed.');}
+    const product=await manager.findOne(ProductEntity,{where:{id:input.productId,organizationId},lock:{mode:'pessimistic_write'}});
+    if(!product)throw new DomainError('Product was not found','PRODUCT_NOT_FOUND',404);
+    if(product.status!==ProductStatus.Active)throw new DomainError('Codes can only be generated for an active product','PRODUCT_NOT_ACTIVE',409);
+    const activationMode=input.fulfillment===Fulfillment.Preprinted?'controlled_physical_print':'self_print_digital';
+    let batch=await manager.save(CodeBatchEntity,manager.create(CodeBatchEntity,{id:newCodeBatchId(),batchReference:newBatchReference(),allocationVendorId:organizationId,organizationId,clientRequestId,productId:product.id,generatedBy:actorId,labelType:input.labelType,fulfillment:input.fulfillment,paperSize:input.paperSize,logisticsService:input.logisticsService,manufacturingDate:input.manufacturingDate,expiryDate:input.expiryDate,quantity:input.quantity,activationMode,status:BatchStatus.Generating}));
+    const generated=await this.allocateCodes(manager,organizationId,batch.id,input.quantity);
+    batch.namespace=generated[0]!.namespace;
+    const rows=generated.map(item=>{const id=randomUUID();return manager.create(VerificationCodeEntity,{id,organizationId,productId:product.id,batchId:batch.id,code:item.verificationCode,codeFormatVersion:item.codeFormatVersion,keyVersion:item.keyVersion,namespace:item.namespace,internalSerial:item.internalSerial,publicToken:item.publicToken,luhnDigit:item.luhnDigit,antiFabTag:item.antiFabTag,allocationId:item.allocationId,productBatchId:null,unitId:id,status:VerificationCodeStatus.Allocated})});
+    for(let start=0;start<rows.length;start+=1000)await manager.insert(VerificationCodeEntity,rows.slice(start,start+1000));
+    batch.status=BatchStatus.Allocated;batch=await manager.save(CodeBatchEntity,batch);
+    await manager.insert(AuditLogEntity,{organizationId,actorId,action:'batch.generated',resourceType:'code_batch',resourceId:batch.id,status:'success'});
+    product.totalCodes+=input.quantity;await manager.save(ProductEntity,product);
+    return{batch,credentials:generated.map(({verificationCode})=>({verificationCode,displayCode:this.displayCode(verificationCode),qrPayload:this.qrPayload(verificationCode)})),batchReference:displayBatchReference(batch.batchReference),masterQrPayload:masterQrPayload(batch)};
   }
 
   async verify(verificationCode:string,context:{ip?:string;userAgent?:string;location?:string;customerComplaint?:string;scannerCookie?:string;nonce?:string;channel?:string;shopperId?:string}={}, transactionManager?:EntityManager){
@@ -108,11 +119,236 @@ export class CodesService {
   async listBatches(organizationId:string,query:BatchQueryDto){const allowed=new Set(['createdAt','quantity','status','labelType']),sort=allowed.has(query.sortBy)?query.sortBy:'createdAt',qb=this.dataSource.getRepository(CodeBatchEntity).createQueryBuilder('batch').leftJoin(ProductEntity,'product','product.id = batch.productId AND product.organizationId = batch.organizationId').addSelect('product.name','productName').where('batch.organizationId = :organizationId',{organizationId});if(query.productId)qb.andWhere('batch.productId = :productId',{productId:query.productId});if(query.labelType)qb.andWhere('batch.labelType = :labelType',{labelType:query.labelType});if(query.fulfillment)qb.andWhere('batch.fulfillment = :fulfillment',{fulfillment:query.fulfillment});if(query.status==='activated')qb.andWhere('batch.status = :status',{status:BatchStatus.MarketActive});else if(query.status==='awaiting_activation')qb.andWhere('batch.status IN (:...statuses)',{statuses:[BatchStatus.Generated,BatchStatus.Allocated,BatchStatus.ReleasedForActivation]});else if(query.status==='suspended')qb.andWhere('batch.status IN (:...statuses)',{statuses:[BatchStatus.Recalled,BatchStatus.Revoked]});else if(query.status)qb.andWhere('batch.status = :status',{status:query.status});if(query.search)qb.andWhere("(LOWER(product.name) LIKE :search OR CAST(batch.id AS text) LIKE :search OR LOWER(REPLACE(batch.batchReference,'-','')) LIKE :referenceSearch)",{search:`%${query.search.toLowerCase()}%`,referenceSearch:`%${query.search.toLowerCase().replace(/[-\s]/g,'')}%`});qb.orderBy(`batch.${sort}`,query.sortDirection.toUpperCase()as'ASC'|'DESC').skip((query.page-1)*query.pageSize).take(query.pageSize);const total=await qb.clone().skip(undefined).take(undefined).getCount(),{entities,raw}=await qb.getRawAndEntities();return pageOf(await Promise.all(entities.map(async(row,index)=>({...row,batchReference:displayBatchReference(row.batchReference),productName:raw[index]?.productName,totalCost:await this.batchCost(row)}))),total,query.page,query.pageSize,query.sortBy,query.sortDirection)}
   async summary(organizationId:string){const repo=this.dataSource.getRepository(VerificationCodeEntity),base=()=>repo.createQueryBuilder('code').where('code.organizationId = :organizationId',{organizationId});const[totalCodes,availableCodes,scannedCodes]=await Promise.all([repo.countBy({organizationId}),base().andWhere('code.status = :status',{status:VerificationCodeStatus.MarketActive}).getCount(),base().andWhere('code.verificationCount > 0').getCount()]);return{totalCodes,availableCodes,scannedCodes}}
 
-  // The former claim-at-activation workflow violates immutable dispatch-time ownership.
-  async openMarketLookup(_user:RequestContext,_dto:OpenMarketLookupDto){return this.rejectOpenMarketClaim()}
-  async openMarketLink(_user:RequestContext,_claimId:string,_dto:OpenMarketLinkDto){return this.rejectOpenMarketClaim()}
-  async openMarketVerify(_user:RequestContext,_claimId:string,_dto:OpenMarketVerifyDto){return this.rejectOpenMarketClaim()}
-  private rejectOpenMarketClaim():never{throw new DomainError('Batches must be assigned before dispatch. Use the assigned batch release and activation workflow.','OPEN_MARKET_CLAIM_DISABLED',410)}
+  async openMarketLookup(user: RequestContext, dto: OpenMarketLookupDto) {
+    const digits = dto.batchId.replace(/\D/g, '').slice(0, 16);
+    const publicBatchId = digits.match(/.{1,4}/g)?.join('-') ?? dto.batchId.trim();
+    const inventory = await this.dataSource.getRepository(OpenMarketBatchEntity).findOne({
+      where: { publicBatchId, status: 'available' },
+      select: ['id', 'publicBatchId', 'activationCodeHash', 'labelType', 'quantity', 'totalCost', 'status', 'claimedCodeBatchId'],
+    });
+    if (!inventory?.claimedCodeBatchId || !await argon2.verify(inventory.activationCodeHash, dto.activationCode.replace(/\D/g, ''))) {
+      throw new DomainError('The batch ID or activation code is invalid', 'OPEN_MARKET_BATCH_INVALID', 400);
+    }
+    const claimRepository = this.dataSource.getRepository(OpenMarketClaimEntity);
+    const claim = await claimRepository.save(claimRepository.create({
+      userId: user.userId,
+      organizationId: user.organizationId,
+      inventoryBatchId: inventory.id,
+      expiresAt: new Date(Date.now() + 15 * 60_000),
+    }));
+    return {
+      claimId: claim.id,
+      batch: {
+        batchId: inventory.publicBatchId,
+        labelType: inventory.labelType,
+        quantity: inventory.quantity,
+        totalCost: Number(inventory.totalCost),
+      },
+      expiresInSeconds: 900,
+    };
+  }
+
+  async openMarketLink(user: RequestContext, claimId: string, dto: OpenMarketLinkDto) {
+    const [claim, account, product] = await Promise.all([
+      this.dataSource.getRepository(OpenMarketClaimEntity).findOneBy({
+        id: claimId,
+        userId: user.userId,
+        organizationId: user.organizationId,
+        consumed: false,
+      }),
+      this.dataSource.getRepository(UserEntity).findOneBy({
+        id: user.userId,
+        organizationId: user.organizationId,
+        isActive: true,
+      }),
+      this.dataSource.getRepository(ProductEntity).findOneBy({
+        id: dto.productId,
+        organizationId: user.organizationId,
+        status: ProductStatus.Active,
+      }),
+    ]);
+    if (!claim || claim.expiresAt.getTime() <= Date.now()) {
+      throw new DomainError('The Open Market claim has expired', 'OPEN_MARKET_CLAIM_EXPIRED', 400);
+    }
+    if (!account || account.role !== 'vendor_admin' || !product) {
+      throw new DomainError('The account or selected product is unavailable', 'OPEN_MARKET_PRODUCT_INVALID', 400);
+    }
+    if (!await this.dataSource.getRepository(OpenMarketBatchEntity).existsBy({
+      id: claim.inventoryBatchId,
+      status: 'available',
+    })) {
+      throw new DomainError('This Open Market batch is no longer available', 'OPEN_MARKET_BATCH_UNAVAILABLE', 409);
+    }
+    const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
+    claim.productId = product.id;
+    claim.otpHash = await argon2.hash(code, { type: argon2.argon2id });
+    claim.attempts = 0;
+    claim.expiresAt = new Date(Date.now() + 10 * 60_000);
+    await this.dataSource.transaction(async (manager) => {
+      await manager.save(OpenMarketClaimEntity, claim);
+      const variables = { code, expiresInMinutes: 10 };
+      const content = await this.emailTemplates.render(
+        manager,
+        'auth.open_market_otp',
+        variables,
+        () => verificationCodeEmail(code, 10),
+      );
+      await this.reliability.enqueue(manager, 'email.send', 'open-market-claim', claim.id, {
+        to: account.email,
+        ...content,
+      });
+    });
+    return {
+      claimId: claim.id,
+      maskedEmail: this.maskEmail(account.email),
+      expiresInSeconds: 600,
+      ...(process.env.NODE_ENV === 'test' ? { code } : {}),
+    };
+  }
+
+  async openMarketVerify(user: RequestContext, claimId: string, dto: OpenMarketVerifyDto) {
+    const claimRepository = this.dataSource.getRepository(OpenMarketClaimEntity);
+    const candidate = await claimRepository.findOne({
+      where: {
+        id: claimId,
+        userId: user.userId,
+        organizationId: user.organizationId,
+        consumed: false,
+      },
+      select: ['id', 'userId', 'organizationId', 'inventoryBatchId', 'productId', 'otpHash', 'expiresAt', 'attempts', 'consumed'],
+    });
+    if (!candidate || !candidate.productId || !candidate.otpHash || candidate.expiresAt.getTime() <= Date.now() || candidate.attempts >= 5) {
+      throw new DomainError('The verification code is invalid or expired', 'OPEN_MARKET_OTP_INVALID', 400);
+    }
+    candidate.attempts += 1;
+    if (!await argon2.verify(candidate.otpHash, dto.code)) {
+      await claimRepository.save(candidate);
+      throw new DomainError('The verification code is invalid or expired', 'OPEN_MARKET_OTP_INVALID', 400);
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      const claim = await manager.findOne(OpenMarketClaimEntity, {
+        where: {
+          id: claimId,
+          userId: user.userId,
+          organizationId: user.organizationId,
+          consumed: false,
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!claim?.productId) {
+        throw new DomainError('The Open Market claim is unavailable', 'OPEN_MARKET_CLAIM_UNAVAILABLE', 409);
+      }
+      const inventory = await manager.findOne(OpenMarketBatchEntity, {
+        where: { id: claim.inventoryBatchId, status: 'available' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const product = await manager.findOne(ProductEntity, {
+        where: {
+          id: claim.productId,
+          organizationId: user.organizationId,
+          status: ProductStatus.Active,
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!inventory?.claimedCodeBatchId || !product) {
+        throw new DomainError('This Open Market batch is no longer available', 'OPEN_MARKET_BATCH_UNAVAILABLE', 409);
+      }
+      const batch = await manager.findOne(CodeBatchEntity, {
+        where: { id: inventory.claimedCodeBatchId, status: BatchStatus.Allocated },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!batch || batch.activationMode !== 'controlled_physical_print') {
+        throw new DomainError('This Open Market batch is no longer available', 'OPEN_MARKET_BATCH_UNAVAILABLE', 409);
+      }
+      const codes = await manager.getRepository(VerificationCodeEntity)
+        .createQueryBuilder('code')
+        .where('code.batchId = :batchId', { batchId: batch.id })
+        .andWhere('code.organizationId = :organizationId', { organizationId: batch.organizationId })
+        .andWhere('code.status = :status', { status: VerificationCodeStatus.Allocated })
+        .setLock('pessimistic_write')
+        .getMany();
+      if (codes.length !== inventory.quantity) {
+        throw new DomainError('The Open Market batch inventory is incomplete', 'OPEN_MARKET_BATCH_INVALID', 409);
+      }
+
+      const now = new Date();
+      const lot = await manager.save(
+        ProductBatchEntity,
+        manager.create(ProductBatchEntity, {
+          organizationId: user.organizationId,
+          productId: product.id,
+          lotReference: `OPEN-${inventory.publicBatchId.replace(/\D/g, '')}`,
+        }),
+      );
+      const inventoryProduct = await manager.findOneBy(ProductEntity, {
+        id: batch.productId,
+        organizationId: batch.organizationId,
+      });
+      await manager.update(
+        VerificationCodeEntity,
+        { batchId: batch.id, organizationId: batch.organizationId, status: VerificationCodeStatus.Allocated },
+        {
+          organizationId: user.organizationId,
+          productId: product.id,
+          productBatchId: lot.id,
+          status: VerificationCodeStatus.MarketActive,
+          activatedAt: now,
+          activatedBy: user.userId,
+        },
+      );
+      batch.organizationId = user.organizationId;
+      batch.allocationVendorId = user.organizationId;
+      batch.productId = product.id;
+      batch.productBatchId = lot.id;
+      batch.status = BatchStatus.MarketActive;
+      batch.activatedAt = now;
+      batch.activatedBy = user.userId;
+      await manager.save(CodeBatchEntity, batch);
+      product.totalCodes += inventory.quantity;
+      await manager.save(ProductEntity, product);
+      if (inventoryProduct) {
+        inventoryProduct.totalCodes = Math.max(0, inventoryProduct.totalCodes - inventory.quantity);
+        await manager.save(ProductEntity, inventoryProduct);
+      }
+      claim.consumed = true;
+      claim.attempts = candidate.attempts;
+      await manager.save(OpenMarketClaimEntity, claim);
+      inventory.status = 'claimed';
+      inventory.claimedAt = now;
+      inventory.claimedByOrganizationId = user.organizationId;
+      await manager.save(OpenMarketBatchEntity, inventory);
+      await manager.save(AuditLogEntity, manager.create(AuditLogEntity, {
+        organizationId: user.organizationId,
+        actorId: user.userId,
+        action: 'open_market_batch.activated',
+        resourceType: 'code_batch',
+        resourceId: batch.id,
+        status: 'success',
+        metadata: { inventoryBatchId: inventory.id, publicBatchId: inventory.publicBatchId },
+      }));
+      const activatedBy = await manager.findOneBy(UserEntity, {
+        id: user.userId,
+        organizationId: user.organizationId,
+      });
+      return {
+        batchId: batch.id,
+        publicBatchId: inventory.publicBatchId,
+        productId: product.id,
+        productName: product.name,
+        productUnit: product.form,
+        labelType: inventory.labelType,
+        quantity: inventory.quantity,
+        activatedBy:
+          [activatedBy?.firstName, activatedBy?.lastName].filter(Boolean).join(' ') ||
+          activatedBy?.email ||
+          'Vendor user',
+        activatedByImageUrl: activatedBy?.profileImageUrl,
+        activatedOn: now,
+        activated: true,
+      };
+    });
+  }
 
   async getBatch(organizationId:string,id:string){const lookup=batchLookup(id);const batch=lookup?await this.dataSource.getRepository(CodeBatchEntity).findOneBy({...lookup,organizationId}):null;if(!batch)throw new DomainError('Code batch was not found','BATCH_NOT_FOUND',404);const[product,user]=await Promise.all([this.dataSource.getRepository(ProductEntity).findOneBy({id:batch.productId,organizationId}),this.dataSource.getRepository(UserEntity).findOneBy({id:batch.generatedBy,organizationId})]);return{...batch,batchReference:displayBatchReference(batch.batchReference),masterQrPayload:masterQrPayload(batch),productName:product?.name,productImageUrl:product?.imageUrl,productUnit:product?.form,generatedByName:[user?.firstName,user?.lastName].filter(Boolean).join(' ')||user?.email||'Vendor user',generatedByImageUrl:user?.profileImageUrl,totalCost:await this.batchCost(batch),isActivated:batch.status===BatchStatus.MarketActive,activatedOn:batch.activatedAt}}
   async listCodes(organizationId:string,batchId:string,query:CodeQueryDto){batchId=(await this.getBatch(organizationId,batchId)).id;const repo=this.dataSource.getRepository(VerificationCodeEntity),where={organizationId,batchId,...(query.status?{status:query.status}:{}),...(query.search?{code:ILike(`%${query.search}%`)}:{}),...(query.verificationCountMin!==undefined?{verificationCount:MoreThanOrEqual(query.verificationCountMin)}:{})},order=toOrder(query.sortBy,query.sortDirection,['code','status','createdAt','activatedAt','verificationCount','lastVerifiedAt']as const,'createdAt'),[rows,total]=await repo.findAndCount({where,order,skip:(query.page-1)*query.pageSize,take:query.pageSize});return pageOf(rows.map(row=>this.safeCode(row)),total,query.page,query.pageSize,query.sortBy,query.sortDirection)}

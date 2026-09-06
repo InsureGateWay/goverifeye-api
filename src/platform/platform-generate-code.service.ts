@@ -1,17 +1,24 @@
 import { displayBatchReference, masterQrPayload } from '../codes/batch-format';
 import { Injectable } from '@nestjs/common';
-import { randomUUID } from 'crypto';
-import { DataSource, Not } from 'typeorm';
+import { createHash, randomInt, randomUUID } from 'crypto';
+import * as argon2 from 'argon2';
+import { DataSource, EntityManager, Not } from 'typeorm';
 import { UserEntity } from '../auth/auth.entity';
+import type { RequestContext } from '../common/request-context';
 import { GenerateBatchDto } from '../codes/code.dto';
 import { Fulfillment, LabelType } from '../codes/code.enums';
+import { CodeBatchEntity, OpenMarketBatchEntity } from '../codes/code.entity';
 import { CodesService } from '../codes/codes.service';
 import { DomainError } from '../common/domain-error';
 import { PricingService } from '../commerce/pricing.service';
+import { AuditLogEntity } from '../operations/operations.entity';
 import { OrganizationEntity } from '../onboarding/onboarding.entity';
 import { ProductEntity } from '../products/product.entity';
 import { ProductStatus } from '../products/product.model';
-import { PlatformGenerateBatchDto } from './platform-generate-code.dto';
+import {
+  PlatformGenerateBatchDto,
+  PlatformGenerateOpenMarketBatchDto,
+} from './platform-generate-code.dto';
 
 const PLATFORM_ORG_NAME = 'goVerifEye Platform Ops';
 const PLACEHOLDER_PRODUCT = 'General Product';
@@ -39,6 +46,15 @@ function resolveLabelType(labels: Array<'micro' | 'main'>): LabelType {
   if (hasMicro && hasMain) return LabelType.Pair;
   if (hasMain) return LabelType.Main;
   return LabelType.Micro;
+}
+
+function openMarketBatchId(): string {
+  const digits = `${randomInt(0, 100_000_000).toString().padStart(8, '0')}${randomInt(0, 100_000_000).toString().padStart(8, '0')}`;
+  return digits.match(/.{4}/g)!.join('-');
+}
+
+function openMarketActivationCode(): string {
+  return randomInt(0, 100_000_000).toString().padStart(8, '0');
 }
 
 @Injectable()
@@ -143,6 +159,165 @@ export class PlatformGenerateCodeService {
       generatedOn: formatDisplayDateTime(batch.createdAt),
       generatedBy,
       status: 'awaiting_activation' as const,
+    };
+  }
+
+  async createOpenMarketBatch(
+    actor: RequestContext,
+    dto: PlatformGenerateOpenMarketBatchDto,
+    idempotencyKey: string,
+  ) {
+    const inventoryIdempotencyKey = `open-market:${createHash('sha256').update(idempotencyKey).digest('hex')}`;
+    const platform = await this.db.getRepository(OrganizationEntity).findOneBy({
+      companyName: PLATFORM_ORG_NAME,
+      status: 'approved',
+    });
+    if (!platform) {
+      throw new DomainError(
+        'The platform inventory organization is unavailable',
+        'PLATFORM_INVENTORY_UNAVAILABLE',
+        503,
+      );
+    }
+
+    const labelType = resolveLabelType(dto.labels);
+    const unitPrice = dto.unitPrice ?? (await this.pricing.getUnitPrice(labelType));
+    const estimatedCost =
+      dto.estimatedCost ?? Number((unitPrice * dto.quantity).toFixed(2));
+    const activationCode = openMarketActivationCode();
+    const activationCodeHash = await argon2.hash(activationCode, {
+      type: argon2.argon2id,
+    });
+    const created = await this.db.transaction(async (manager) => {
+      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [inventoryIdempotencyKey]);
+      const existingBatch = await manager.findOneBy(CodeBatchEntity, {
+        organizationId: platform.id,
+        clientRequestId: inventoryIdempotencyKey,
+      });
+      if (existingBatch) {
+        const existingInventory = await manager.findOneBy(OpenMarketBatchEntity, {
+          claimedCodeBatchId: existingBatch.id,
+        });
+        if (existingInventory) {
+          return { inventory: existingInventory, batch: existingBatch, replayed: true };
+        }
+      }
+
+      const product = await this.resolveInventoryProduct(manager, platform.id, actor.userId);
+      const generated = await this.codes.generateBatchInTransaction(
+        manager,
+        platform.id,
+        actor.userId,
+        {
+          productId: product.id,
+          labelType,
+          fulfillment: Fulfillment.Preprinted,
+          paperSize: 'Roll',
+          quantity: dto.quantity,
+        },
+        inventoryIdempotencyKey,
+      );
+      let publicBatchId = openMarketBatchId();
+      while (await manager.exists(OpenMarketBatchEntity, { where: { publicBatchId } })) {
+        publicBatchId = openMarketBatchId();
+      }
+      const row = await manager.save(
+        OpenMarketBatchEntity,
+        manager.create(OpenMarketBatchEntity, {
+          publicBatchId,
+          activationCodeHash,
+          labelType,
+          quantity: dto.quantity,
+          totalCost: estimatedCost,
+          status: 'available',
+          claimedCodeBatchId: generated.batch.id,
+        }),
+      );
+      await manager.save(
+        AuditLogEntity,
+        manager.create(AuditLogEntity, {
+          organizationId: actor.organizationId,
+          actorId: actor.userId,
+          action: 'platform.open_market_batch.generated',
+          resourceType: 'open_market_batch',
+          resourceId: row.id,
+          status: 'success',
+          metadata: { codeBatchId: generated.batch.id, quantity: dto.quantity, labelType },
+        }),
+      );
+      return { inventory: row, batch: generated.batch, replayed: false };
+    });
+
+    return this.openMarketResult(
+      created.inventory,
+      created.batch,
+      actor.userId,
+      created.replayed ? undefined : activationCode,
+      created.replayed,
+      unitPrice,
+    );
+  }
+
+  private async resolveInventoryProduct(manager: EntityManager, organizationId: string, actorId: string) {
+    const products = manager.getRepository(ProductEntity);
+    const existing = await products.findOneBy({
+      organizationId,
+      name: PLACEHOLDER_PRODUCT,
+      status: ProductStatus.Active,
+    });
+    if (existing) return existing;
+    return products.save(
+      products.create({
+        organizationId,
+        name: PLACEHOLDER_PRODUCT,
+        description: 'Temporary holding product for unassigned code inventory.',
+        form: 'Unassigned',
+        manufacturer: PLATFORM_ORG_NAME,
+        status: ProductStatus.Active,
+        createdBy: actorId,
+      }),
+    );
+  }
+
+  private async openMarketResult(
+    inventory: OpenMarketBatchEntity,
+    batch: CodeBatchEntity,
+    actorId: string,
+    activationCode?: string,
+    replayed = false,
+    unitPrice?: number,
+  ) {
+    const actor = await this.db.getRepository(UserEntity).findOneBy({ id: actorId });
+    const generatedBy =
+      [actor?.firstName, actor?.lastName].filter(Boolean).join(' ') ||
+      actor?.email ||
+      'Platform admin';
+    return {
+      mode: 'open_market' as const,
+      labels:
+        inventory.labelType === LabelType.Pair
+          ? ['micro', 'main']
+          : [inventory.labelType === LabelType.Main ? 'main' : 'micro'],
+      quantity: inventory.quantity,
+      vendorId: '',
+      vendorName: 'Unassigned - any approved vendor',
+      productId: '',
+      productName: 'Selected during activation',
+      unitPrice: unitPrice ?? Number(inventory.totalCost) / inventory.quantity,
+      estimatedCost: Number(inventory.totalCost),
+      batchId: inventory.publicBatchId,
+      batchReference: displayBatchReference(batch.batchReference),
+      masterQrPayload: masterQrPayload(batch),
+      activationCode: activationCode
+        ? `${activationCode.slice(0, 4)} ${activationCode.slice(4)}`
+        : undefined,
+      generatedOn: formatDisplayDateTime(batch.createdAt),
+      generatedBy,
+      status: 'awaiting_activation' as const,
+      replayed,
+      ...(replayed
+        ? { warning: 'This request was already completed. The activation code cannot be displayed again.' }
+        : {}),
     };
   }
 
