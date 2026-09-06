@@ -29,6 +29,7 @@ export class GovernanceController {
   @Roles(UserRole.SuperAdmin) @Get('platform/options/:id/history') optionHistory(@Param('id')id:string){return this.service.optionHistoryList(id);}
 
   @Post('settings/change-requests') createChange(@CurrentUser()u:RequestContext,@Body()dto:CreateChangeRequestDto){return this.service.createChangeRequest(u,dto);}
+  @Get('settings/profile/history') profileHistory(@CurrentUser()u:RequestContext){return this.service.profileHistory(u.organizationId);}
   @Get('settings/2fa/status') mfaStatus(@CurrentUser()u:RequestContext){return this.service.mfaStatus(u);}
   @Post('settings/2fa/enroll') enrollMfa(@CurrentUser()u:RequestContext){return this.service.beginMfa(u);}
   @Post('settings/2fa/verify') verifyMfa(@CurrentUser()u:RequestContext,@Body()dto:MfaCodeDto){return this.service.verifyMfa(u,dto.code);}

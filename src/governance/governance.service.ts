@@ -106,6 +106,117 @@ export class GovernanceService {
     return { id: saved.id, reference: `CR-${saved.id.slice(0, 8).toUpperCase()}`, status: saved.status, message: 'Your change request has been submitted.' };
   }
 
+  async profileHistory(organizationId: string) {
+    const organization = await this.db.getRepository(OrganizationEntity).findOneBy({ id: organizationId });
+    if (!organization) throw new DomainError('Company was not found', 'COMPANY_NOT_FOUND', 404);
+
+    const [statusChanges, documents, changeRequests] = await Promise.all([
+      this.db.getRepository(VendorStatusHistoryEntity).find({
+        where: { organizationId },
+        order: { createdAt: 'DESC' },
+        take: 100,
+      }),
+      this.db.getRepository(OrganizationDocumentEntity).find({
+        where: { organizationId },
+        order: { updatedAt: 'DESC' },
+        take: 100,
+      }),
+      this.db.getRepository(OrganizationChangeRequestEntity).find({
+        where: { organizationId },
+        order: { createdAt: 'DESC' },
+        take: 100,
+      }),
+    ]);
+
+    const events: Array<{
+      id: string;
+      type: 'organization_joined' | 'status_changed' | 'document_verified' | 'change_request_submitted' | 'change_request_reviewed';
+      title: string;
+      occurredAt: Date;
+      status?: string;
+      details?: string;
+    }> = [{
+      id: `organization-${organization.id}`,
+      type: 'organization_joined',
+      title: 'Organisation joined goVerifEye.',
+      occurredAt: organization.createdAt,
+      status: organization.status,
+    }];
+
+    for (const change of statusChanges) {
+      const title = change.toStatus === 'approved'
+        ? 'Business review approved.'
+        : change.toStatus === 'rejected'
+          ? 'Business review rejected.'
+          : change.toStatus === 'suspended'
+            ? 'Vendor account suspended.'
+            : change.toStatus === 'submitted'
+              ? 'Business details submitted for review.'
+              : `Vendor status changed to ${change.toStatus.replace(/_/g, ' ')}.`;
+      events.push({
+        id: `status-${change.id}`,
+        type: 'status_changed',
+        title,
+        occurredAt: change.createdAt,
+        status: change.toStatus,
+        ...(change.reason ? { details: change.reason } : {}),
+      });
+    }
+
+    // Older vendors can predate lifecycle-history rows. Keep their current review
+    // state visible without duplicating a recorded transition.
+    if (
+      ['approved', 'rejected'].includes(organization.status)
+      && !statusChanges.some((change) => change.toStatus === organization.status)
+    ) {
+      events.push({
+        id: `status-current-${organization.id}`,
+        type: 'status_changed',
+        title: organization.status === 'approved' ? 'Business review approved.' : 'Business review rejected.',
+        occurredAt: organization.updatedAt,
+        status: organization.status,
+      });
+    }
+
+    for (const document of documents.filter((item) => item.status === 'verified')) {
+      events.push({
+        id: `document-${document.id}`,
+        type: 'document_verified',
+        title: `${document.fileName} accepted.`,
+        occurredAt: document.updatedAt,
+        status: document.status,
+        details: document.type,
+      });
+    }
+
+    for (const request of changeRequests) {
+      events.push({
+        id: `change-request-submitted-${request.id}`,
+        type: 'change_request_submitted',
+        title: `${request.category} change requested.`,
+        occurredAt: request.createdAt,
+        status: 'pending',
+        details: request.details,
+      });
+      if (request.reviewedAt && request.status !== 'pending') {
+        events.push({
+          id: `change-request-reviewed-${request.id}`,
+          type: 'change_request_reviewed',
+          title: `${request.category} change request ${request.status}.`,
+          occurredAt: request.reviewedAt,
+          status: request.status,
+          ...(request.reviewNotes ? { details: request.reviewNotes } : {}),
+        });
+      }
+    }
+
+    events.sort((left, right) => right.occurredAt.getTime() - left.occurredAt.getTime());
+    const lastUpdatedAt = events[0]?.occurredAt && events[0].occurredAt > organization.updatedAt
+      ? events[0].occurredAt
+      : organization.updatedAt;
+    return { joinedAt: organization.createdAt, lastUpdatedAt, events };
+  }
+
   private validateOptionValue(type:string,value:unknown,rules:Record<string,unknown>={}){
     const valid=type==='array'?Array.isArray(value):type==='object'?Boolean(value)&&typeof value==='object'&&!Array.isArray(value):typeof value===type;
     if(!valid)throw new DomainError(`Option value must be ${type}`,'OPTION_VALUE_INVALID',400);
