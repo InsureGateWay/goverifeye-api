@@ -3,14 +3,22 @@ import { BaseEntity } from '../database/base.entity';
 import type { VerificationChannel, VerifyCodeResponseDto } from './customer.contract';
 
 @Entity('shoppers')
-export class ShopperEntity extends BaseEntity { @Column({ unique: true, length: 254 }) email!: string; }
+export class ShopperEntity extends BaseEntity {
+  @Column({ unique: true, length: 254 }) email!: string;
+  @Column({ type: 'varchar', length: 80, nullable: true }) displayName!: string | null;
+  @Column({ type: 'varchar', nullable: true, select: false }) passwordHash!: string | null;
+}
 @Entity('shopper_challenges')
 export class ShopperChallengeEntity extends BaseEntity {
   @Column({ length: 254 }) @Index() email!: string;
+  @Column({ length: 24, default: 'login' }) purpose!: 'login' | 'registration' | 'password_reset';
   @Column() codeHash!: string;
   @Column('timestamp') expiresAt!: Date;
   @Column({ default: 0 }) attempts!: number;
   @Column({ default: false }) consumed!: boolean;
+  @Column({ type: 'varchar', nullable: true, unique: true }) actionTokenHash!: string | null;
+  @Column('timestamp', { nullable: true }) actionExpiresAt!: Date | null;
+  @Column('timestamp', { nullable: true }) actionCompletedAt!: Date | null;
 }
 @Entity('shopper_sessions')
 export class ShopperSessionEntity extends BaseEntity {

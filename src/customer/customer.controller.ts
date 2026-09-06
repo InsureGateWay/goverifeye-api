@@ -4,7 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { Public } from '../auth/public.decorator';
-import { ConcernBody, CustomerCheckBody, CustomerHistoryQuery, SharedCheckBody, ShopperChallengeBody, ShopperLoginBody } from './customer.dto';
+import { ConcernBody, CustomerCheckBody, CustomerHistoryQuery, SharedCheckBody, ShopperChallengeBody, ShopperLoginBody, ShopperPasswordLoginBody, ShopperPasswordResetCompleteBody, ShopperPasswordResetVerifyBody, ShopperRegistrationCompleteBody, ShopperRegistrationVerifyBody } from './customer.dto';
 import type { CustomerCheckDto } from './customer.contract';
 import { CustomerService } from './customer.service';
 
@@ -16,7 +16,21 @@ export class CustomerController {
   challenge(@Body() input: ShopperChallengeBody) { return this.service.requestLogin(input.email); }
   @Post('auth/login') @HttpCode(200) @Throttle({ default: { limit: 10, ttl: 60000 } })
   login(@Body() input: ShopperLoginBody) { return this.service.login(input.challengeId, input.code); }
-  @Get('auth/me') async me(@Headers('authorization') auth?: string) { const shopper = await this.service.shopper(auth); return { id: shopper!.id, email: shopper!.email }; }
+  @Post('auth/registration/challenge') @HttpCode(200) @Throttle({ default: { limit: 5, ttl: 60000 } })
+  registrationChallenge(@Body() input: ShopperChallengeBody) { return this.service.requestRegistration(input.email); }
+  @Post('auth/registration/verify') @HttpCode(200) @Throttle({ default: { limit: 10, ttl: 60000 } })
+  registrationVerify(@Body() input: ShopperRegistrationVerifyBody) { return this.service.verifyRegistration(input.challengeId, input.code); }
+  @Post('auth/registration/complete') @HttpCode(201) @Throttle({ default: { limit: 5, ttl: 60000 } })
+  registrationComplete(@Body() input: ShopperRegistrationCompleteBody) { return this.service.completeRegistration(input.registrationToken, input.displayName, input.password); }
+  @Post('auth/password/login') @HttpCode(200) @Throttle({ default: { limit: 10, ttl: 60000 } })
+  passwordLogin(@Body() input: ShopperPasswordLoginBody) { return this.service.passwordLogin(input.email, input.password); }
+  @Post('auth/password/reset/challenge') @HttpCode(200) @Throttle({ default: { limit: 5, ttl: 60000 } })
+  passwordResetChallenge(@Body() input: ShopperChallengeBody) { return this.service.requestPasswordReset(input.email); }
+  @Post('auth/password/reset/verify') @HttpCode(200) @Throttle({ default: { limit: 10, ttl: 60000 } })
+  passwordResetVerify(@Body() input: ShopperPasswordResetVerifyBody) { return this.service.verifyPasswordReset(input.challengeId, input.code); }
+  @Post('auth/password/reset/complete') @HttpCode(200) @Throttle({ default: { limit: 5, ttl: 60000 } })
+  passwordResetComplete(@Body() input: ShopperPasswordResetCompleteBody) { return this.service.completePasswordReset(input.resetToken, input.password); }
+  @Get('auth/me') async me(@Headers('authorization') auth?: string) { const shopper = await this.service.shopper(auth); return { id: shopper!.id, email: shopper!.email, ...(shopper!.displayName ? { displayName: shopper!.displayName } : {}) }; }
   @Post('auth/logout') @HttpCode(200) logout(@Headers('authorization') auth?: string) { return this.service.logout(auth); }
   @Post('checks') @HttpCode(200) @Throttle({ default: { limit: 30, ttl: 60000 } })
   check(@Body() input: CustomerCheckBody, @Req() request: Request) { return this.service.check(input, request.get('authorization'), { ip: request.ip, userAgent: request.get('user-agent') }); }

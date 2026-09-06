@@ -52,7 +52,7 @@ describe('shopper isolation and verification retries', () => {
     expect(checks.find).toHaveBeenCalledWith(expect.objectContaining({ where: { shopperId: 'owner' }, skip: 20, take: 21 }));
   });
   it('commits incorrect OTP attempts and rejects a consumed challenge', async () => {
-    const challenge = { id: 'id', email: 'shopper@example.com', codeHash: await argon2.hash('123456'), consumed: false, attempts: 0, expiresAt: new Date(Date.now() + 60000) };
+    const challenge = { id: 'id', email: 'shopper@example.com', purpose: 'login', codeHash: await argon2.hash('123456'), consumed: false, attempts: 0, expiresAt: new Date(Date.now() + 60000) };
     const manager = { findOne: jest.fn(async () => challenge), save: jest.fn(async () => challenge) };
     const db = { transaction: jest.fn(async callback => callback(manager)) };
     const service = new CustomerService(db as never, {} as never, {} as never);
@@ -61,5 +61,60 @@ describe('shopper isolation and verification retries', () => {
     challenge.consumed = true;
     await expect(service.login('id', '123456')).rejects.toMatchObject({ status: 401 });
     expect(challenge.attempts).toBe(1);
+  });
+  it('labels registration challenges, invalidates older OTPs, and enforces the 30-second resend delay', async () => {
+    const challenges = { findOne: jest.fn(async () => null), countBy: jest.fn(async () => 0) };
+    const shoppers = { existsBy: jest.fn(async () => false) };
+    const manager = { update: jest.fn(async () => ({ affected: 1 })), create: jest.fn((_type, value) => ({ ...value, id: 'challenge-id' })), save: jest.fn(async (_type, value) => value) };
+    const db = { getRepository: jest.fn(type => type === ShopperChallengeEntity ? challenges : shoppers), transaction: jest.fn(async callback => callback(manager)) };
+    const reliability = { enqueue: jest.fn(async () => undefined) };
+    const service = new CustomerService(db as never, {} as never, reliability as never);
+    await expect(service.requestRegistration(' Shopper@Example.com ')).resolves.toMatchObject({ challengeId: 'challenge-id', expiresInSeconds: 600 });
+    expect(manager.update).toHaveBeenCalledWith(ShopperChallengeEntity, { email: 'shopper@example.com', purpose: 'registration', consumed: false }, { consumed: true });
+    expect(manager.create).toHaveBeenCalledWith(ShopperChallengeEntity, expect.objectContaining({ email: 'shopper@example.com', purpose: 'registration' }));
+    challenges.findOne.mockResolvedValue({ createdAt: new Date() } as never);
+    await expect(service.requestRegistration('shopper@example.com')).rejects.toMatchObject({ code: 'OTP_RESEND_COOLDOWN', status: 429 });
+    expect(reliability.enqueue).toHaveBeenCalledTimes(1);
+  });
+  it('turns a valid registration OTP into a short-lived one-time token without creating an account', async () => {
+    const challenge: any = { id: 'id', email: 'shopper@example.com', purpose: 'registration', codeHash: await argon2.hash('123456'), consumed: false, attempts: 0, expiresAt: new Date(Date.now() + 60000), actionTokenHash: null, actionExpiresAt: null };
+    const manager = { findOne: jest.fn(async () => challenge), existsBy: jest.fn(async () => false), save: jest.fn(async () => challenge) };
+    const db = { transaction: jest.fn(async callback => callback(manager)) };
+    const service = new CustomerService(db as never, {} as never, {} as never);
+    const result = await service.verifyRegistration('id', '123456');
+    expect(result.registrationToken).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.expiresInSeconds).toBe(600);
+    expect(challenge.consumed).toBe(true);
+    expect(challenge.actionTokenHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(challenge.actionExpiresAt).toBeInstanceOf(Date);
+  });
+  it('creates the shopper and session only after verified registration details are submitted', async () => {
+    const challenge: any = { email: 'shopper@example.com', purpose: 'registration', consumed: true, actionCompletedAt: null, actionTokenHash: 'hash', actionExpiresAt: new Date(Date.now() + 60000) };
+    const manager = {
+      findOne: jest.fn(async () => challenge),
+      existsBy: jest.fn(async () => false),
+      create: jest.fn((_type, value) => value),
+      save: jest.fn(async (type, value) => type === ShopperEntity ? { ...value, id: 'shopper-id' } : value),
+    };
+    const db = { transaction: jest.fn(async callback => callback(manager)) };
+    const service = new CustomerService(db as never, {} as never, {} as never);
+    const result = await service.completeRegistration('a'.repeat(64), '  Ada Shopper  ', 'Correct horse battery staple 1');
+    expect(result.accessToken).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.shopper).toEqual({ id: 'shopper-id', email: 'shopper@example.com', displayName: 'Ada Shopper' });
+    expect(challenge.actionCompletedAt).toBeInstanceOf(Date);
+    expect(challenge.actionTokenHash).toBeNull();
+    expect(manager.save).toHaveBeenCalledWith(ShopperSessionEntity, expect.objectContaining({ shopperId: 'shopper-id' }));
+  });
+  it('replaces the password and revokes existing sessions after password-reset OTP verification', async () => {
+    const challenge: any = { email: 'shopper@example.com', purpose: 'password_reset', consumed: true, actionCompletedAt: null, actionTokenHash: 'hash', actionExpiresAt: new Date(Date.now() + 60000) };
+    const shopper: any = { id: 'shopper-id', email: challenge.email, passwordHash: 'old-hash' };
+    const manager = { findOne: jest.fn(async type => type === ShopperChallengeEntity ? challenge : shopper), save: jest.fn(async (_type, value) => value), delete: jest.fn(async () => ({ affected: 2 })) };
+    const db = { transaction: jest.fn(async callback => callback(manager)) };
+    const service = new CustomerService(db as never, {} as never, {} as never);
+    await expect(service.completePasswordReset('b'.repeat(64), 'New password 123')).resolves.toEqual({ passwordReset: true });
+    await expect(argon2.verify(shopper.passwordHash, 'New password 123')).resolves.toBe(true);
+    expect(manager.delete).toHaveBeenCalledWith(ShopperSessionEntity, { shopperId: shopper.id });
+    expect(challenge.actionCompletedAt).toBeInstanceOf(Date);
+    expect(challenge.actionTokenHash).toBeNull();
   });
 });
