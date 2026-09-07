@@ -4,6 +4,7 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 import * as argon2 from 'argon2';
 import { Brackets, DataSource, ILike, In, IsNull } from 'typeorm';
 import { UserEntity } from '../auth/auth.entity';
+import { UserRole } from '../auth/authorization';
 import { pageOf } from '../common/api-response';
 import { DomainError } from '../common/domain-error';
 import { RequestContext, submittedBy } from '../common/request-context';
@@ -391,6 +392,74 @@ export class GovernanceService {
       await Promise.allSettled(stored.map((document) => this.documents.remove(document.storageKey)));
       throw error;
     }
+  }
+
+  async deleteVendor(u: RequestContext, id: string, confirmation: string) {
+    if (u.role !== UserRole.SuperAdmin) {
+      throw new DomainError('Only a Super Admin can permanently delete a vendor', 'SUPER_ADMIN_REQUIRED', 403);
+    }
+    const organization = await this.db.getRepository(OrganizationEntity).findOneBy({ id });
+    if (!organization) throw new DomainError('Vendor was not found', 'VENDOR_NOT_FOUND', 404);
+    if (confirmation.trim() !== organization.companyName) {
+      throw new DomainError('Enter the vendor name exactly to confirm permanent deletion', 'VENDOR_DELETE_CONFIRMATION_INVALID', 400);
+    }
+    if (id === u.organizationId || await this.db.getRepository(UserEntity).existsBy({ organizationId:id, role:UserRole.SuperAdmin })) {
+      throw new DomainError('The platform organization cannot be deleted', 'PLATFORM_ORGANIZATION_PROTECTED', 403);
+    }
+
+    const [documents, invitations, products, users] = await Promise.all([
+      this.db.getRepository(OrganizationDocumentEntity).findBy({ organizationId:id }),
+      this.db.getRepository(VendorInvitationEntity).findBy({ organizationId:id }),
+      this.db.getRepository(ProductEntity).findBy({ organizationId:id }),
+      this.db.getRepository(UserEntity).findBy({ organizationId:id }),
+    ]);
+    const documentPaths = new Set([
+      ...documents.map((document) => document.storageKey),
+      ...invitations.flatMap((invitation) => invitation.documents.map((document) => document.storageKey)),
+    ]);
+    const storageDeletes: Promise<void>[] = [...documentPaths].map((path) => this.documents.remove(path));
+    const isManagedUrl = (value?: string | null) => Boolean(value?.includes('/storage/v1/object/public/'));
+    if (isManagedUrl(organization.logoUrl)) storageDeletes.push(this.productImages.removeVendorLogo(id, organization.logoUrl!));
+    for (const product of products) {
+      if (isManagedUrl(product.imageUrl)) storageDeletes.push(this.productImages.removeProductImage(id, product.imageUrl!));
+      if (isManagedUrl(product.verificationDocumentUrl)) storageDeletes.push(this.productImages.removeProductDocument(id, product.verificationDocumentUrl!));
+    }
+    await Promise.all(storageDeletes);
+
+    const emails = [...new Set([
+      organization.administrator.email.trim().toLowerCase(),
+      ...users.map((user) => user.email.trim().toLowerCase()),
+      ...invitations.map((invitation) => invitation.email.trim().toLowerCase()),
+    ])];
+    await this.db.transaction(async (manager) => {
+      const locked = await manager.findOne(OrganizationEntity, { where:{id}, lock:{mode:'pessimistic_write'} });
+      if (!locked) throw new DomainError('Vendor was not found', 'VENDOR_NOT_FOUND', 404);
+      if (locked.companyName !== confirmation.trim()) throw new DomainError('Vendor changed while deletion was being confirmed', 'VENDOR_DELETE_CONFIRMATION_INVALID', 409);
+
+      await manager.query(`SELECT set_config('app.allow_vendor_cascade_delete', 'on', true)`);
+      await manager.query(`DELETE FROM "customer_checks" WHERE code IN (SELECT code FROM "verification_codes" WHERE "organizationId"=$1)`, [id]);
+      await manager.query(`DELETE FROM "fraud_case_notes" WHERE "caseId" IN (SELECT id FROM "fraud_cases" WHERE "organizationId"=$1)`, [id]);
+      await manager.query(`DELETE FROM "application_option_history" WHERE "optionId" IN (SELECT id FROM "application_options" WHERE "organizationId"=$1)`, [id]);
+      await manager.query(`DELETE FROM "password_reset_challenges" WHERE "userId" IN (SELECT id FROM users WHERE "organizationId"=$1)`, [id]);
+      await manager.query(`DELETE FROM "otp_challenges" WHERE LOWER(email)=ANY($1::text[])`, [emails]);
+      await manager.query(`DELETE FROM "outbox_messages" WHERE "aggregateId"=$1 OR "aggregateId" LIKE $2 OR LOWER(payload->>'to')=ANY($3::text[])`, [id, `${id}:%`, emails]);
+      await manager.query(`DELETE FROM "open_market_batches" WHERE "claimedByOrganizationId"=$1`, [id]);
+      await manager.query(`DELETE FROM "vendor_invitations" WHERE "organizationId"=$1 OR LOWER(email)=ANY($2::text[])`, [id, emails]);
+
+      for (const table of [
+        'approval_decisions', 'organization_change_requests', 'user_mfa_factors',
+        'mfa_login_challenges', 'vendor_status_history', 'audit_exceptions', 'fraud_cases',
+        'application_options', 'payments', 'background_jobs', 'support_tickets',
+        'batch_activation_events', 'open_market_claims', 'verification_events',
+        'verification_codes', 'code_batches', 'code_namespaces', 'product_batches',
+        'team_invitations', 'team_members', 'notifications', 'idempotency_records',
+        'auth_sessions', 'audit_logs', 'organization_documents', 'products', 'users',
+      ]) {
+        await manager.query(`DELETE FROM "${table}" WHERE "organizationId"=$1`, [id]);
+      }
+      await manager.delete(OrganizationEntity, { id });
+    });
+    return { deleted:true, id, companyName:organization.companyName };
   }
   async vendorLifecycle(u: RequestContext, id: string, toStatus: string, dto: VendorLifecycleDto) {
     return this.db.transaction(async (m) => {

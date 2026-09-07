@@ -1,4 +1,4 @@
-import { invitationEmail, passwordResetCodeEmail, vendorOnboardingSubmittedEmail, vendorVerifiedEmail, verificationCodeEmail } from './email-templates';
+import { invitationEmail, passwordResetCodeEmail, platformVendorDecisionEmail, vendorOnboardingSubmittedEmail, vendorRejectedEmail, vendorVerifiedEmail, verificationCodeEmail } from './email-templates';
 
 describe('email templates', () => {
   it('renders a branded verification email with a plain-text fallback', () => {
@@ -56,6 +56,35 @@ describe('email templates', () => {
     expect(email.subject).toContain('has been verified');
     expect(email.html).toContain('administrator has verified');
     expect(email.text).toContain('vendor account is now active');
+  });
+
+  it('renders the rejection reason for the vendor safely', () => {
+    const email = vendorRejectedEmail({
+      firstName: 'Ada',
+      companyName: 'Example & Sons',
+      reason: '<Missing document>',
+      onboardingUrl: 'https://app.example/onboarding',
+    });
+    expect(email.subject).toContain('was not approved');
+    expect(email.html).toContain('&lt;Missing document&gt;');
+    expect(email.html).not.toContain('<Missing document>');
+    expect(email.text).toContain('Reason: <Missing document>');
+  });
+
+  it('renders the delegated vendor decision for a Super Admin', () => {
+    const email = platformVendorDecisionEmail({
+      firstName: 'Super',
+      companyName: 'Example & Sons',
+      decision: 'approved',
+      reviewerName: 'Pat Admin',
+      reviewerEmail: 'pat@example.com',
+      reviewerRole: 'platform admin',
+      notes: 'Documents verified.',
+      vendorUrl: 'https://app.example/admin/vendors/vendor-id',
+    });
+    expect(email.subject).toContain('was approved by Pat Admin');
+    expect(email.text).toContain('platform admin');
+    expect(email.html).toContain('View vendor record');
   });
 
   it('renders a single-use password reset code email', () => {

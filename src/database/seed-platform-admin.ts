@@ -7,7 +7,7 @@ import { UserEntity } from '../auth/auth.entity'
 import { OrganizationEntity } from '../onboarding/onboarding.entity'
 import { ApplicationOptionEntity } from '../governance/governance.entity'
 import { EmailTemplateEntity, EmailTemplateHistoryEntity } from '../operations/email-template.entity'
-import { invitationEmail, passwordResetCodeEmail, vendorOnboardingSubmittedEmail, vendorVerifiedEmail, verificationCodeEmail } from '../operations/email-templates'
+import { invitationEmail, passwordResetCodeEmail, platformVendorDecisionEmail, vendorOnboardingSubmittedEmail, vendorRejectedEmail, vendorVerifiedEmail, verificationCodeEmail } from '../operations/email-templates'
 
 /**
  * Seeds / promotes the platform super_admin users for Admin Portal testing.
@@ -160,6 +160,9 @@ export async function seedPlatformAdmin() {
         {key:'team.invitation',name:'Team invitation',audience:'staff',description:'Sent for vendor and platform team invitations and resends.',content:invitationEmail({firstName:'{{firstName}}',role:'{{role}}',invitationUrl:'{{invitationUrl}}',expiresInDays:'{{expiresInDays}}' as unknown as number})},
         {key:'vendor.onboarding_submitted',name:'Vendor onboarding submitted',audience:'vendor',description:'Confirms onboarding submission to the vendor administrator.',content:vendorOnboardingSubmittedEmail({firstName:'{{firstName}}',companyName:'{{companyName}}',dashboardUrl:'{{dashboardUrl}}',termsUrl:'{{termsUrl}}',userGuideUrl:'{{userGuideUrl}}',dataUsePolicyUrl:'{{dataUsePolicyUrl}}'})},
         {key:'vendor.verified',name:'Vendor approved',audience:'vendor',description:'Sent when a platform administrator approves vendor onboarding.',content:vendorVerifiedEmail({firstName:'{{firstName}}',companyName:'{{companyName}}',dashboardUrl:'{{dashboardUrl}}',userGuideUrl:'{{userGuideUrl}}'})},
+        {key:'vendor.rejected',name:'Vendor rejected',audience:'vendor',description:'Sent when a platform team member rejects vendor onboarding.',content:vendorRejectedEmail({firstName:'{{firstName}}',companyName:'{{companyName}}',reason:'{{reason}}',onboardingUrl:'{{onboardingUrl}}'})},
+        {key:'platform.vendor_approved_by_delegate',name:'Vendor approved by delegate',audience:'platform_admin',description:'Alerts Super Admin users when another platform team member approves a vendor.',content:platformVendorDecisionEmail({firstName:'{{firstName}}',companyName:'{{companyName}}',decision:'approved',reviewerName:'{{reviewerName}}',reviewerEmail:'{{reviewerEmail}}',reviewerRole:'{{reviewerRole}}',notes:'{{notes}}',vendorUrl:'{{vendorUrl}}'})},
+        {key:'platform.vendor_rejected_by_delegate',name:'Vendor rejected by delegate',audience:'platform_admin',description:'Alerts Super Admin users when another platform team member rejects a vendor.',content:platformVendorDecisionEmail({firstName:'{{firstName}}',companyName:'{{companyName}}',decision:'rejected',reviewerName:'{{reviewerName}}',reviewerEmail:'{{reviewerEmail}}',reviewerRole:'{{reviewerRole}}',notes:'{{notes}}',vendorUrl:'{{vendorUrl}}'})},
       ]
       for(const item of rawTemplates){
         if(await templateRepo.existsBy({key:item.key,versionNumber:1}))continue

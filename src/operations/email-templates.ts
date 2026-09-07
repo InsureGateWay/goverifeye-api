@@ -308,6 +308,74 @@ Next steps:
   };
 }
 
+export function vendorRejectedEmail(input: {
+  firstName?: string;
+  companyName: string;
+  reason: string;
+  onboardingUrl: string;
+}): EmailContent {
+  const name = displayName(input.firstName);
+  const greeting = name ? `Hi ${name},` : 'Hello,';
+  return {
+    subject: `${input.companyName} was not approved on goVerifEye`,
+    text: `${greeting}
+
+The onboarding review for ${input.companyName} was not approved.
+
+Reason: ${input.reason}
+
+Review your onboarding information at ${input.onboardingUrl}. Update the requested details before submitting again.`,
+    html: layout({
+      preheader: `The onboarding review for ${input.companyName} was not approved.`,
+      eyebrow: 'Onboarding decision',
+      heading: 'Your vendor application needs attention',
+      body: `<p style="margin:0 0 14px;font-size:16px;font-weight:600;color:${TEXT_PRIMARY}">${escapeHtml(greeting)}</p>
+<p style="margin:0 0 18px">The onboarding review for <strong>${escapeHtml(input.companyName)}</strong> was not approved.</p>
+<h2 style="margin:24px 0 10px;font-size:17px;color:${TEXT_PRIMARY}">Reason from the review team</h2>
+<p style="margin:0;padding:14px 16px;background:${SURFACE_SOFT};border:1px solid ${CARD_BORDER};border-radius:10px">${escapeHtml(input.reason)}</p>`,
+      action: { label: 'Review onboarding', url: input.onboardingUrl },
+      notice: 'Update the requested information before submitting your application again.',
+    }),
+  };
+}
+
+export function platformVendorDecisionEmail(input: {
+  firstName?: string;
+  companyName: string;
+  decision: 'approved' | 'rejected';
+  reviewerName: string;
+  reviewerEmail: string;
+  reviewerRole: string;
+  notes: string;
+  vendorUrl: string;
+}): EmailContent {
+  const name = displayName(input.firstName);
+  const greeting = name ? `Hi ${name},` : 'Hello,';
+  const decisionLabel = input.decision === 'approved' ? 'approved' : 'rejected';
+  const heading = input.decision === 'approved' ? 'Vendor application approved' : 'Vendor application rejected';
+  return {
+    subject: `${input.companyName} was ${decisionLabel} by ${input.reviewerName}`,
+    text: `${greeting}
+
+${input.reviewerName} (${input.reviewerRole}, ${input.reviewerEmail}) ${decisionLabel} the vendor application for ${input.companyName}.
+
+Review notes: ${input.notes}
+
+View the vendor record: ${input.vendorUrl}`,
+    html: layout({
+      preheader: `${input.companyName} was ${decisionLabel} by ${input.reviewerName}.`,
+      eyebrow: 'Vendor review activity',
+      heading,
+      body: `<p style="margin:0 0 14px;font-size:16px;font-weight:600;color:${TEXT_PRIMARY}">${escapeHtml(greeting)}</p>
+<p style="margin:0 0 18px"><strong>${escapeHtml(input.reviewerName)}</strong> (${escapeHtml(input.reviewerRole)}) ${decisionLabel} the vendor application for <strong>${escapeHtml(input.companyName)}</strong>.</p>
+<p style="margin:0 0 6px"><strong>Reviewer email:</strong> ${escapeHtml(input.reviewerEmail)}</p>
+<p style="margin:0"><strong>Review notes:</strong> ${escapeHtml(input.notes)}</p>`,
+      action: { label: 'View vendor record', url: input.vendorUrl },
+      notice: 'This notification was sent because the decision was made by a delegated platform team member.',
+    }),
+  };
+}
+
 export function passwordResetCodeEmail(input: {
   firstName?: string;
   code: string;

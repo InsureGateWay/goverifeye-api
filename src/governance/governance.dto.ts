@@ -33,6 +33,9 @@ export class InviteVendorDto {
 export class VendorLifecycleDto {
   @IsOptional() @IsString() @Length(1, 4000) reason?: string;
 }
+export class DeleteVendorDto {
+  @IsString() @Length(2, 200) confirmation!: string;
+}
 export class FraudCaseQueryDto extends PageQueryDto {
   @IsOptional() @IsIn(['critical', 'high', 'medium', 'low']) severity?: string;
   @IsOptional() @IsIn(['open', 'investigating', 'contained', 'resolved', 'dismissed']) status?: string;

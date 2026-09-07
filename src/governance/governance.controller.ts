@@ -10,7 +10,7 @@ import {
   ExportQueryDto, FraudCaseQueryDto, InviteVendorDto, MfaCodeDto,
   MfaDisableDto, PlatformProductQueryDto, PlatformProductStatusDto,
   ResolveAuditExceptionDto, UpdateFraudCaseDto, UpdateIncidentDto,
-  VendorLifecycleDto, ReviewChangeRequestDto, ChangeRequestQueryDto, OptionQueryDto, CreateOptionDto, UpdateOptionDto, SetVendorLogoDto,
+  VendorLifecycleDto, DeleteVendorDto, ReviewChangeRequestDto, ChangeRequestQueryDto, OptionQueryDto, CreateOptionDto, UpdateOptionDto, SetVendorLogoDto,
 } from './governance.dto';
 import { GovernanceService, UploadedVendorFile } from './governance.service';
 import { Public } from '../auth/public.decorator';
@@ -57,6 +57,7 @@ export class GovernanceController {
   @Roles(UserRole.SuperAdmin) @Delete('platform/vendors/:vendorId/documents/:documentId') deleteVendorDocument(@CurrentUser()u:RequestContext,@Param('vendorId')vendorId:string,@Param('documentId')documentId:string){return this.service.deleteVendorDocument(u,vendorId,documentId);}
   @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:id/deactivate') deactivateVendor(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:VendorLifecycleDto){return this.service.vendorLifecycle(u,id,'deactivated',dto);}
   @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:id/reactivate') reactivateVendor(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:VendorLifecycleDto){return this.service.vendorLifecycle(u,id,'approved',dto);}
+  @Roles(UserRole.SuperAdmin) @Delete('platform/vendors/:id') deleteVendor(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:DeleteVendorDto){return this.service.deleteVendor(u,id,dto.confirmation);}
 
   @Roles(UserRole.SuperAdmin) @Get('platform/fraud-alerts/overview') fraudOverview(){return this.service.fraudOverview();}
   @Roles(UserRole.SuperAdmin) @Get('platform/fraud-alerts') fraud(@Query()q:FraudCaseQueryDto){return this.service.listFraud(q);}

@@ -245,7 +245,7 @@ export class ApprovalController {
       if (dto.decision === 'approved') row.approvedBy = submittedBy(u);
       await m.save(OrganizationEntity, row);
       if (dto.decision === 'approved') await m.update(UserEntity, { organizationId: row.id }, { isActive: true });
-      await m.save(
+      const decision = await m.save(
         ApprovalDecisionEntity,
         m.create(ApprovalDecisionEntity, {
           resourceType: 'onboarding',
@@ -256,8 +256,8 @@ export class ApprovalController {
           notes: dto.notes,
         }),
       );
-      if (dto.decision === 'approved') {
-        await this.welcome.enqueueVerifiedOnce(m, row);
+      if (dto.decision === 'approved' || dto.decision === 'rejected') {
+        await this.welcome.enqueueDecisionOutcomeOnce(m, row, dto.decision, dto.notes, u, decision.id);
       }
       return row;
     });
