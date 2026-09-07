@@ -47,6 +47,14 @@ describe('GVE-16 verification pipeline',()=>{
     expect(result).toMatchObject({valid:true,status:'market_active',firstVerification:true,outcome:'valid',product:{name:'Test Product'}});
   });
 
+  it('keeps the first four checks valid and flags the fifth repeated check',async()=>{
+    const record=activeRecord(),{service}=harness(record),results=[];
+    for(let count=0;count<5;count++)results.push(await service.verify(record.code,{channel:'qr'}));
+    expect(results.map(result=>result.outcome)).toEqual(['valid','valid','valid','valid','suspicious']);
+    expect(results.map(result=>result.verificationCount)).toEqual([1,2,3,4,5]);
+    expect(results[4]).toMatchObject({risk:'review_recommended'});
+  });
+
   it('rejects a cross-allocation binding even when the printed tag is valid',async()=>{
     const record=activeRecord();record.productBatchId='55555555-5555-4555-8555-555555555555';
     await expect(harness(record).service.verify(record.code)).resolves.toEqual({valid:false,status:'invalid'});
