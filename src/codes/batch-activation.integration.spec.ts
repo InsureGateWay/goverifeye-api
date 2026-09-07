@@ -98,6 +98,9 @@ integration('batch activation against PostgreSQL',()=>{
     await activation.release(f.batch.id,platform);
     await expect(activation.reveal(f.batch.id,f.actor,{password:'wrong-password',reason:'Reveal'},f.source)).rejects.toMatchObject({code:'STEP_UP_REQUIRED'});
     await expect(activation.reveal(f.batch.id,{...f.actor,organizationId:randomUUID()},{password,reason:'Reveal'},randomUUID())).rejects.toMatchObject({code:'BATCH_NOT_FOUND'});
+    // Admin-created vendors sign in with a temporary password while this advisory flag is set.
+    // The same freshly supplied credential must also satisfy PIN step-up authentication.
+    await db.getRepository(UserEntity).update({id:f.actor.userId},{mustChangePassword:true});
     const pin=await reveal(f);
     await expect(activation.activate(f.batch.id,f.actor,{confirm:true,productBatchReference:'LOT-001',pin:pin.pin.replace(/\s/g,'')},f.source)).rejects.toMatchObject({code:'STEP_UP_REQUIRED'});
     expect(await db.getRepository(BatchActivationEventEntity).countBy({batchId:f.batch.id,action:'step_up_failed'})).toBe(2);

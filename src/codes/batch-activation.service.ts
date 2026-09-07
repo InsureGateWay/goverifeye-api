@@ -137,7 +137,7 @@ export class BatchActivationService {
   private async stepUp(manager: EntityManager, actor: RequestContext, password?: string) {
     if (!password) return false;
     const user = await manager.findOneBy(UserEntity, { id: actor.userId, organizationId: actor.organizationId, isActive: true });
-    return Boolean(user && user.role === 'vendor_admin' && !user.mustChangePassword && await argon2.verify(user.passwordHash, password));
+    return Boolean(user && user.role === 'vendor_admin' && await argon2.verify(user.passwordHash, password));
   }
 
   private digest(batchId: string, pin: string, version: string) {
