@@ -20,11 +20,16 @@ export class DomainErrorFilter implements ExceptionFilter {
     let code = 'INTERNAL_ERROR';
     let title = 'An unexpected error occurred';
     let detail: unknown;
+    let details: Record<string, unknown> | undefined;
 
     if (error instanceof DomainError) {
       status = error.status;
       code = error.code;
       title = error.message;
+      details = error.details;
+      for (const [name, value] of Object.entries(error.headers ?? {})) {
+        response.setHeader(name, value);
+      }
     } else if (error instanceof QueryFailedError && ['23505','ER_DUP_ENTRY'].includes((error.driverError as { code?: string })?.code ?? '')) {
       status = HttpStatus.CONFLICT;
       code = 'RESOURCE_ALREADY_EXISTS';
@@ -60,6 +65,7 @@ export class DomainErrorFilter implements ExceptionFilter {
       code = 'SERVICE_TEMPORARILY_UNAVAILABLE';
       title = 'The service is temporarily unable to complete this request';
       detail = undefined;
+      details = undefined;
     }
 
     await this.persist(error, request, {
@@ -77,6 +83,7 @@ export class DomainErrorFilter implements ExceptionFilter {
       instance: request.originalUrl,
       correlationId,
       ...(detail ? { detail } : {}),
+      ...(details ? { details } : {}),
     });
   }
 

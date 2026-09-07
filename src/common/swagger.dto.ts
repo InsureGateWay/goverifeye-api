@@ -22,6 +22,7 @@ export class ProblemDetailsDto {
   @ApiProperty({ example: '/api/v1/products' }) instance!: string;
   @ApiProperty({ format: 'uuid' }) correlationId!: string;
   @ApiPropertyOptional({ oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] }) detail?: string | string[];
+  @ApiPropertyOptional({ type: 'object', additionalProperties: true }) details?: Record<string, unknown>;
 }
 
 export class PageMetaDto {

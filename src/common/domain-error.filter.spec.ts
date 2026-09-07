@@ -1,10 +1,12 @@
 import { ArgumentsHost, BadRequestException } from '@nestjs/common';
+import { DomainError } from './domain-error';
 import { DomainErrorFilter } from './domain-error.filter';
 
 function harness(error: unknown) {
   const insert = jest.fn().mockResolvedValue({});
   const response = {
     getHeader: jest.fn().mockReturnValue('correlation-123'),
+    setHeader: jest.fn(),
     status: jest.fn().mockReturnThis(),
     type: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
@@ -42,6 +44,27 @@ describe('DomainErrorFilter', () => {
 
     expect(test.insert).toHaveBeenCalledWith(expect.objectContaining({ originalStatus: 400, severity: 'low' }));
     expect(test.response.status).toHaveBeenCalledWith(400);
+  });
+
+  it('returns domain error retry details and headers', async () => {
+    const test = harness(new DomainError(
+      'Try again later',
+      'ACTIVATION_COOLDOWN',
+      429,
+      { retryAt: '2026-09-07T22:00:00.000Z', retryAfterSeconds: 900 },
+      { 'Retry-After': '900' },
+    ));
+    await test.run();
+
+    expect(test.response.setHeader).toHaveBeenCalledWith('Retry-After', '900');
+    expect(test.response.status).toHaveBeenCalledWith(429);
+    expect(test.response.json).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'ACTIVATION_COOLDOWN',
+      details: {
+        retryAt: '2026-09-07T22:00:00.000Z',
+        retryAfterSeconds: 900,
+      },
+    }));
   });
 
   it('still returns a safe response when exception persistence fails', async () => {

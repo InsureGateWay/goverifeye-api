@@ -37,6 +37,7 @@ export function enrichOpenApiDocument(document: OpenAPIObject): OpenAPIObject {
       instance: { type: 'string' },
       correlationId: { type: 'string', format: 'uuid' },
       detail: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
+      details: { type: 'object', additionalProperties: true },
     },
   };
   document.components.schemas.ResponsePayloadDto ??= {

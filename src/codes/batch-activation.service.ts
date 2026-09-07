@@ -118,7 +118,14 @@ export class BatchActivationService {
     if (!batch || batch.organizationId !== actor.organizationId || batch.allocationVendorId !== actor.organizationId) return this.reject(manager, actor, batch, 'access_rejected', 'Code batch was not found', 'BATCH_NOT_FOUND', 404);
     limits.push(await this.lockLimit(manager, createHash('sha256').update(`batch:${batch.id}`).digest('hex')));
     const now = Date.now();
-    if (limits.some(limit => limit.cooldownUntil && limit.cooldownUntil.getTime() > now)) return this.reject(manager, actor, batch, 'cooldown_rejected', 'Activation is temporarily unavailable; try again after the cooldown', 'ACTIVATION_COOLDOWN', 429);
+    const activeCooldowns = limits
+      .map(limit => limit.cooldownUntil)
+      .filter((value): value is Date => Boolean(value && value.getTime() > now));
+    if (activeCooldowns.length) {
+      const cooldownUntil = new Date(Math.max(...activeCooldowns.map(value => value.getTime())));
+      await this.event(manager, actor, batch, 'cooldown_rejected', 'failure');
+      return { error: this.cooldownError(cooldownUntil) };
+    }
     return { batch, limits };
   }
 
@@ -157,7 +164,25 @@ export class BatchActivationService {
     }
     await this.event(manager, actor, batch, action, 'failure');
     if (locked) await this.event(manager, actor, batch, 'cooldown_started', 'failure');
-    return { error: new DomainError(locked ? 'Activation is temporarily unavailable; try again after the cooldown' : message, locked ? 'ACTIVATION_COOLDOWN' : code, locked ? 429 : 401) };
+    return {
+      error: locked
+        ? this.cooldownError(new Date(now + COOLDOWN_MS))
+        : new DomainError(message, code, 401),
+    };
+  }
+
+  private cooldownError(cooldownUntil: Date) {
+    const retryAfterSeconds = Math.max(
+      1,
+      Math.ceil((cooldownUntil.getTime() - Date.now()) / 1000),
+    );
+    return new DomainError(
+      'Activation is temporarily unavailable; try again after the cooldown',
+      'ACTIVATION_COOLDOWN',
+      429,
+      { retryAt: cooldownUntil.toISOString(), retryAfterSeconds },
+      { 'Retry-After': String(retryAfterSeconds) },
+    );
   }
 
   private async reject(manager: EntityManager, actor: RequestContext, batch: CodeBatchEntity | null, action: string, message: string, code: string, status: number): Promise<Failure> {
