@@ -5,7 +5,7 @@ import { Body, Controller, Get, Headers, HttpCode, Param, Post, Req, Res } from 
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Public } from '../auth/public.decorator';
 import { CurrentUser, RequestContext } from '../common/request-context';
-import { BatchQueryDto, CodeQueryDto, GenerateBatchDto, OpenMarketLinkDto, OpenMarketLookupDto, OpenMarketVerifyDto, VerifyProductCodeDto } from './code.dto'; import { Query } from '@nestjs/common';
+import { BatchQueryDto, CodeDetailsQueryDto, CodeQueryDto, GenerateBatchDto, OpenMarketLinkDto, OpenMarketLookupDto, OpenMarketVerifyDto, VerifyProductCodeDto } from './code.dto'; import { Query } from '@nestjs/common';
 import { CodesService } from './codes.service';
 import { Throttle } from '@nestjs/throttler';
 import { RequiresActivatedOrganization } from '../common/organization-activation.guard';
@@ -34,7 +34,7 @@ export class CodesController {
   @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin) @Throttle({default:{limit:10,ttl:60000}}) @Post('open-market/:claimId/verify') openMarketVerify(@CurrentUser()user:RequestContext,@Param('claimId')claimId:string,@Body()dto:OpenMarketVerifyDto){return this.codes.openMarketVerify(user,claimId,dto)}
   @Get(':id') get(@CurrentUser() user: RequestContext, @Param('id') id: string) { return this.codes.getBatch(user.organizationId, id); }
   @Get(':id/codes') listCodes(@CurrentUser() user: RequestContext, @Param('id') id: string, @Query() query: CodeQueryDto) { return this.codes.listCodes(user.organizationId, id, query); }
-  @Get('codes/:id/details') codeDetails(@CurrentUser() user: RequestContext, @Param('id') id: string) { return this.codes.getCodeDetails(user.organizationId, id); }
+  @Get('codes/:id/details') codeDetails(@CurrentUser() user: RequestContext, @Param('id') id: string, @Query() query:CodeDetailsQueryDto) { return this.codes.getCodeDetails(user.organizationId, id,query); }
   @Post(':id/cancel') cancel(@CurrentUser()user:RequestContext,@Param('id')id:string){return this.codes.cancelBatch(user.organizationId,id)}
   @Post('codes/:id/suspend') suspend(@CurrentUser()user:RequestContext,@Param('id')id:string){return this.codes.setCodeStatus(user.organizationId,id,'suspended')}
   @Post('codes/:id/reactivate') reactivate(@CurrentUser()user:RequestContext,@Param('id')id:string){return this.codes.setCodeStatus(user.organizationId,id,'active')}

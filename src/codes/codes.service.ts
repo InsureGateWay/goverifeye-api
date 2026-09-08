@@ -12,7 +12,7 @@ import { DomainError } from '../common/domain-error';
 import { ProductEntity } from '../products/product.entity';
 import { ProductStatus } from '../products/product.model';
 import { UserEntity } from '../auth/auth.entity';
-import { BatchQueryDto, CodeQueryDto, GenerateBatchDto, OpenMarketLinkDto, OpenMarketLookupDto, OpenMarketVerifyDto } from './code.dto';
+import { BatchQueryDto, CodeDetailsQueryDto, CodeQueryDto, GenerateBatchDto, OpenMarketLinkDto, OpenMarketLookupDto, OpenMarketVerifyDto } from './code.dto';
 import { pageOf } from '../common/api-response';
 import { toOrder } from '../common/page-query.dto';
 import { BatchStatus, CodeBatchEntity, CodeNamespaceEntity, OpenMarketBatchEntity, OpenMarketClaimEntity, VerificationCodeEntity, VerificationCodeStatus, VerificationEventEntity } from './code.entity';
@@ -352,7 +352,35 @@ export class CodesService {
 
   async getBatch(organizationId:string,id:string){const lookup=batchLookup(id);const batch=lookup?await this.dataSource.getRepository(CodeBatchEntity).findOneBy({...lookup,organizationId}):null;if(!batch)throw new DomainError('Code batch was not found','BATCH_NOT_FOUND',404);const[product,user]=await Promise.all([this.dataSource.getRepository(ProductEntity).findOneBy({id:batch.productId,organizationId}),this.dataSource.getRepository(UserEntity).findOneBy({id:batch.generatedBy,organizationId})]);return{...batch,batchReference:displayBatchReference(batch.batchReference),masterQrPayload:masterQrPayload(batch),productName:product?.name,productImageUrl:product?.imageUrl,productUnit:product?.form,generatedByName:[user?.firstName,user?.lastName].filter(Boolean).join(' ')||user?.email||'Vendor user',generatedByImageUrl:user?.profileImageUrl,totalCost:await this.batchCost(batch),isActivated:batch.status===BatchStatus.MarketActive,activatedOn:batch.activatedAt}}
   async listCodes(organizationId:string,batchId:string,query:CodeQueryDto){batchId=(await this.getBatch(organizationId,batchId)).id;const repo=this.dataSource.getRepository(VerificationCodeEntity),where={organizationId,batchId,...(query.status?{status:query.status}:{}),...(query.search?{code:ILike(`%${query.search}%`)}:{}),...(query.verificationCountMin!==undefined?{verificationCount:MoreThanOrEqual(query.verificationCountMin)}:{})},order=toOrder(query.sortBy,query.sortDirection,['code','status','createdAt','activatedAt','verificationCount','lastVerifiedAt']as const,'createdAt'),[rows,total]=await repo.findAndCount({where,order,skip:(query.page-1)*query.pageSize,take:query.pageSize});return pageOf(rows.map(row=>this.safeCode(row)),total,query.page,query.pageSize,query.sortBy,query.sortDirection)}
-  async getCodeDetails(organizationId:string,id:string){const code=await this.dataSource.getRepository(VerificationCodeEntity).findOneBy({id,organizationId});if(!code)throw new DomainError('Verification code was not found','CODE_NOT_FOUND',404);const[events,product,batch]=await Promise.all([this.dataSource.getRepository(VerificationEventEntity).find({where:{organizationId,codeId:id},order:{createdAt:'ASC'}}),this.dataSource.getRepository(ProductEntity).findOneBy({id:code.productId,organizationId}),this.dataSource.getRepository(CodeBatchEntity).findOneBy({id:code.batchId,organizationId})]);return{...this.safeCode(code),firstVerifiedAt:events[0]?.createdAt,suspiciousScans:events.filter(event=>event.outcome==='suspicious').length,manufacturingDate:batch?.manufacturingDate,expiryDate:batch?.expiryDate,product:{id:product?.id,name:product?.name,unit:product?.form}}}
+  async getCodeDetails(organizationId:string,id:string,query:CodeDetailsQueryDto={}){
+    const code=await this.dataSource.getRepository(VerificationCodeEntity).findOneBy({id,organizationId});
+    if(!code)throw new DomainError('Verification code was not found','CODE_NOT_FOUND',404);
+    const[events,product,batch]=await Promise.all([
+      this.dataSource.getRepository(VerificationEventEntity).find({where:{organizationId,codeId:id},order:{createdAt:'ASC'}}),
+      this.dataSource.getRepository(ProductEntity).findOneBy({id:code.productId,organizationId}),
+      this.dataSource.getRepository(CodeBatchEntity).findOneBy({id:code.batchId,organizationId}),
+    ]);
+    const today=new Date();today.setUTCHours(0,0,0,0);
+    const trendEnd=query.endDate?new Date(`${query.endDate.slice(0,10)}T00:00:00.000Z`):today,trendStart=query.startDate?new Date(`${query.startDate.slice(0,10)}T00:00:00.000Z`):new Date(trendEnd);
+    if(!query.startDate)trendStart.setUTCDate(trendStart.getUTCDate()-6);
+    if(trendStart>trendEnd)throw new DomainError('Start date must be on or before end date','INVALID_DATE_RANGE',400);
+    const rangeDays=Math.floor((trendEnd.getTime()-trendStart.getTime())/86_400_000)+1;
+    if(rangeDays>366)throw new DomainError('Code scan trend date range cannot exceed 366 days','DATE_RANGE_TOO_LARGE',400);
+    const trend=Array.from({length:rangeDays},(_,offset)=>{const date=new Date(trendStart);date.setUTCDate(date.getUTCDate()+offset);return{date:date.toISOString(),scans:0}}),trendByDate=new Map(trend.map(point=>[point.date.slice(0,10),point])),trendEndExclusive=new Date(trendEnd);trendEndExclusive.setUTCDate(trendEndExclusive.getUTCDate()+1);
+    for(const event of events){const createdAt=new Date(event.createdAt);if(createdAt>=trendStart&&createdAt<trendEndExclusive){const point=trendByDate.get(createdAt.toISOString().slice(0,10));if(point)point.scans+=1}}
+    const suspiciousEvents=events.filter(event=>event.outcome==='suspicious');
+    return{
+      ...this.safeCode(code),
+      firstVerifiedAt:events[0]?.createdAt,
+      suspiciousScans:suspiciousEvents.length,
+      trend,
+      trendRange:{startDate:trendStart.toISOString().slice(0,10),endDate:trendEnd.toISOString().slice(0,10)},
+      suspiciousEvents:suspiciousEvents.slice().reverse().map(event=>({id:event.id,createdAt:event.createdAt,location:event.location,ipAddress:event.ipAddress,customerComplaint:event.customerComplaint,riskScore:event.riskScore,riskReasons:event.riskReasons??[]})),
+      manufacturingDate:batch?.manufacturingDate,
+      expiryDate:batch?.expiryDate,
+      product:{id:product?.id,name:product?.name,unit:product?.form},
+    }
+  }
   async cancelBatch(organizationId:string,id:string){const repo=this.dataSource.getRepository(CodeBatchEntity),batch=batchLookup(id)?await repo.findOneBy({...batchLookup(id)!,organizationId}):null;if(!batch)throw new DomainError('Code batch was not found','BATCH_NOT_FOUND',404);if(batch.status!==BatchStatus.Generating)throw new DomainError('Only a generating batch can be cancelled','BATCH_NOT_CANCELLABLE',409);batch.status=BatchStatus.Failed;return repo.save(batch)}
   async setCodeStatus(organizationId:string,id:string,status:'suspended'|'active'){const repo=this.dataSource.getRepository(VerificationCodeEntity),row=await repo.findOneBy({id,organizationId});if(!row)throw new DomainError('Verification code was not found','CODE_NOT_FOUND',404);if(status==='active'&&row.status!==VerificationCodeStatus.Revoked)throw new DomainError('Only a revoked market code can be reactivated','CODE_STATE_INVALID',409);if(status==='suspended'&&row.status!==VerificationCodeStatus.MarketActive)throw new DomainError('Only a market-active code can be revoked','CODE_STATE_INVALID',409);row.status=status==='active'?VerificationCodeStatus.MarketActive:VerificationCodeStatus.Revoked;return this.safeCode(await repo.save(row))}
 

@@ -1,7 +1,7 @@
 import { ProductBatchEntity } from './batch-activation.entity';
 import { CodesService } from './codes.service';
 import { CryptographicCodeGenerator } from './cryptographic-code-generator.service';
-import { BatchStatus, CodeBatchEntity, VerificationCodeEntity, VerificationCodeStatus } from './code.entity';
+import { BatchStatus, CodeBatchEntity, VerificationCodeEntity, VerificationCodeStatus, VerificationEventEntity } from './code.entity';
 import { ProductEntity } from '../products/product.entity';
 import { ProductStatus } from '../products/product.model';
 
@@ -58,5 +58,33 @@ describe('GVE-16 verification pipeline',()=>{
   it('rejects a cross-allocation binding even when the printed tag is valid',async()=>{
     const record=activeRecord();record.productBatchId='55555555-5555-4555-8555-555555555555';
     await expect(harness(record).service.verify(record.code)).resolves.toEqual({valid:false,status:'invalid'});
+  });
+
+  it('returns the requested scan date range and the suspicious-event rows counted in code details',async()=>{
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-08T12:00:00.000Z'));
+    try{
+      const code=Object.assign(activeRecord(),{verificationCount:3,lastVerifiedAt:new Date('2026-09-08T09:00:00.000Z')}),events=[
+        Object.assign(new VerificationEventEntity(),{id:'event-valid',createdAt:new Date('2026-09-07T10:00:00.000Z'),outcome:'valid',riskScore:0,riskReasons:[]}),
+        Object.assign(new VerificationEventEntity(),{id:'event-alert-1',createdAt:new Date('2026-09-07T11:00:00.000Z'),outcome:'suspicious',location:'Lagos',ipAddress:'203.0.113.4',ipHash:'private-hash',riskScore:70,riskReasons:['repeat_scan_threshold']}),
+        Object.assign(new VerificationEventEntity(),{id:'event-alert-2',createdAt:new Date('2026-09-08T09:00:00.000Z'),outcome:'suspicious',customerComplaint:'Seal damaged',riskScore:80,riskReasons:['high_frequency']}),
+      ];
+      const repositories=new Map<unknown,unknown>([
+        [VerificationCodeEntity,{findOneBy:jest.fn(async()=>code)}],
+        [VerificationEventEntity,{find:jest.fn(async()=>events)}],
+        [ProductEntity,{findOneBy:jest.fn(async()=>({id:code.productId,name:'Test Product',form:'Unit'}))}],
+        [CodeBatchEntity,{findOneBy:jest.fn(async()=>({id:code.batchId,manufacturingDate:'2026-08-01',expiryDate:'2027-08-01'}))}],
+      ]);
+      const db={getRepository:jest.fn((entity:unknown)=>repositories.get(entity))},service=new CodesService(db as never,generator,options as never,{} as never,{} as never,{} as never,scanIdentity as never);
+      const details=await service.getCodeDetails(code.organizationId,code.id,{startDate:'2026-09-06',endDate:'2026-09-08'});
+      expect(details).toMatchObject({verificationCount:3,suspiciousScans:2,firstVerifiedAt:events[0]!.createdAt,trendRange:{startDate:'2026-09-06',endDate:'2026-09-08'}});
+      expect(details.trend.map(point=>[point.date.slice(0,10),point.scans])).toEqual([
+        ['2026-09-06',0],['2026-09-07',2],['2026-09-08',1],
+      ]);
+      expect(details.suspiciousEvents).toEqual([
+        {id:'event-alert-2',createdAt:events[2]!.createdAt,location:undefined,ipAddress:undefined,customerComplaint:'Seal damaged',riskScore:80,riskReasons:['high_frequency']},
+        {id:'event-alert-1',createdAt:events[1]!.createdAt,location:'Lagos',ipAddress:'203.0.113.4',customerComplaint:undefined,riskScore:70,riskReasons:['repeat_scan_threshold']},
+      ]);
+      expect(details.suspiciousEvents[1]).not.toHaveProperty('ipHash');
+    }finally{jest.useRealTimers()}
   });
 });
