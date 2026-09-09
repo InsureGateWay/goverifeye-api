@@ -15,6 +15,7 @@ import { AuditLogEntity } from '../operations/operations.entity';
 import { OrganizationEntity } from '../onboarding/onboarding.entity';
 import { ProductEntity } from '../products/product.entity';
 import { ProductStatus } from '../products/product.model';
+import { ASSIGNED_BATCH_PLACEHOLDER_PRODUCT } from '../codes/internal-products';
 import {
   PlatformGenerateBatchDto,
   PlatformGenerateOpenMarketBatchDto,
@@ -106,12 +107,6 @@ export class PlatformGenerateCodeService {
       );
     }
 
-    const product = await this.db.getRepository(ProductEntity).findOneBy({
-      id: dto.productId,
-      organizationId: dto.vendorId,
-      status: ProductStatus.Active,
-    });
-    if(!product)throw new DomainError('An approved vendor product is required','PRODUCT_NOT_ACTIVE',409);
     const labelType = resolveLabelType(dto.labels);
     const unitPrice =
       dto.unitPrice ?? (await this.pricing.getUnitPrice(labelType));
@@ -119,20 +114,31 @@ export class PlatformGenerateCodeService {
       dto.estimatedCost ??
       Number((unitPrice * dto.quantity).toFixed(2));
 
-    const generateInput: GenerateBatchDto = {
-      productId: product.id,
-      labelType,
-      fulfillment: Fulfillment.Preprinted,
-      paperSize: 'Roll',
-      quantity: dto.quantity,
-    };
-
-    const generated = await this.codes.generateBatch(
-      dto.vendorId,
-      actorId,
-      generateInput,
-      idempotencyKey || randomUUID(),
-    );
+    const generated = await this.db.transaction(async manager => {
+      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `assigned-placeholder:${dto.vendorId}`,
+      ]);
+      const product = await this.resolveAssignedPlaceholder(
+        manager,
+        dto.vendorId,
+        actorId,
+        org.companyName,
+      );
+      const generateInput: GenerateBatchDto = {
+        productId: product.id,
+        labelType,
+        fulfillment: Fulfillment.Preprinted,
+        paperSize: 'Roll',
+        quantity: dto.quantity,
+      };
+      return this.codes.generateBatchInTransaction(
+        manager,
+        dto.vendorId,
+        actorId,
+        generateInput,
+        idempotencyKey || randomUUID(),
+      );
+    });
 
     const actor = await this.db.getRepository(UserEntity).findOneBy({
       id: actorId,
@@ -149,8 +155,7 @@ export class PlatformGenerateCodeService {
       quantity: dto.quantity,
       vendorId: dto.vendorId,
       vendorName: dto.vendorName || org.companyName,
-      productId: product.id,
-      productName: product.name,
+      productName: 'Selected during activation',
       unitPrice,
       estimatedCost,
       batchId: displayBatchReference(batch.batchReference),
@@ -160,6 +165,33 @@ export class PlatformGenerateCodeService {
       generatedBy,
       status: 'awaiting_activation' as const,
     };
+  }
+
+  private async resolveAssignedPlaceholder(
+    manager: EntityManager,
+    organizationId: string,
+    actorId: string,
+    vendorName: string,
+  ) {
+    const products = manager.getRepository(ProductEntity);
+    const existing = await products.findOneBy({
+      organizationId,
+      name: ASSIGNED_BATCH_PLACEHOLDER_PRODUCT,
+      status: ProductStatus.Active,
+    });
+    if (existing) return existing;
+    return products.save(
+      products.create({
+        organizationId,
+        name: ASSIGNED_BATCH_PLACEHOLDER_PRODUCT,
+        description:
+          'Internal holding product for a platform-assigned batch awaiting vendor activation.',
+        form: 'Unassigned',
+        manufacturer: vendorName,
+        status: ProductStatus.Active,
+        createdBy: actorId,
+      }),
+    );
   }
 
   async createOpenMarketBatch(

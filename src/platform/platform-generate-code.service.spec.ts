@@ -10,8 +10,91 @@ import { ProductEntity } from '../products/product.entity';
 import { ProductStatus } from '../products/product.model';
 import { PricingService } from '../commerce/pricing.service';
 import { PlatformGenerateCodeService } from './platform-generate-code.service';
+import { ASSIGNED_BATCH_PLACEHOLDER_PRODUCT } from '../codes/internal-products';
 
-describe('PlatformGenerateCodeService open-market generation', () => {
+describe('PlatformGenerateCodeService generation', () => {
+  it('assigns a batch to a vendor without selecting a product', async () => {
+    const actorId = '38eb94ee-864f-45c0-9f6b-2aba97214824';
+    const vendor = {
+      id: '319968e2-458f-440e-8c68-91dcf8261c07',
+      companyName: 'Verified Goods Ltd',
+      status: 'approved',
+    };
+    const placeholder = {
+      id: '8fd37c34-e71c-47cb-a35a-f893aca30fa0',
+      organizationId: vendor.id,
+      name: ASSIGNED_BATCH_PLACEHOLDER_PRODUCT,
+      status: ProductStatus.Active,
+    };
+    const batch = {
+      id: '01992daf-f5e7-7c8d-ae14-86ed035b1885',
+      batchReference: 'CB-7K4M9X2PR6',
+      createdAt: new Date('2026-09-06T12:00:00Z'),
+    } as CodeBatchEntity;
+    const productRepository = {
+      findOneBy: jest.fn().mockResolvedValue(placeholder),
+      create: jest.fn((value) => value),
+      save: jest.fn((value) => Promise.resolve(value)),
+    };
+    const manager = {
+      query: jest.fn().mockResolvedValue([]),
+      getRepository: jest.fn((entity) => {
+        if (entity === ProductEntity) return productRepository;
+        throw new Error(`Unexpected repository ${String(entity)}`);
+      }),
+    };
+    const dataSource = {
+      getRepository: jest.fn((entity) => {
+        if (entity === OrganizationEntity) {
+          return { findOneBy: jest.fn().mockResolvedValue(vendor) };
+        }
+        if (entity === UserEntity) {
+          return {
+            findOneBy: jest.fn().mockResolvedValue({
+              firstName: 'Platform',
+              lastName: 'Admin',
+            }),
+          };
+        }
+        throw new Error(`Unexpected repository ${String(entity)}`);
+      }),
+      transaction: jest.fn((work) => work(manager)),
+    } as unknown as DataSource;
+    const codes = {
+      generateBatchInTransaction: jest.fn().mockResolvedValue({ batch }),
+    } as unknown as CodesService;
+    const pricing = {
+      getUnitPrice: jest.fn().mockResolvedValue(7.5),
+    } as unknown as PricingService;
+    const service = new PlatformGenerateCodeService(dataSource, codes, pricing);
+
+    const result = await service.createBatch(
+      actorId,
+      { labels: ['micro'], quantity: 100, vendorId: vendor.id },
+      'assigned-request-123',
+    );
+
+    expect(productRepository.findOneBy).toHaveBeenCalledWith({
+      organizationId: vendor.id,
+      name: ASSIGNED_BATCH_PLACEHOLDER_PRODUCT,
+      status: ProductStatus.Active,
+    });
+    expect(codes.generateBatchInTransaction).toHaveBeenCalledWith(
+      manager,
+      vendor.id,
+      actorId,
+      expect.objectContaining({ productId: placeholder.id, quantity: 100 }),
+      'assigned-request-123',
+    );
+    expect(result).toMatchObject({
+      vendorId: vendor.id,
+      vendorName: vendor.companyName,
+      productName: 'Selected during activation',
+      status: 'awaiting_activation',
+    });
+    expect(result).not.toHaveProperty('productId');
+  });
+
   it('atomically pre-generates an unassigned batch and returns its activation code once', async () => {
     const platform = { id: 'a753f90f-74b6-48a3-9144-2e051747e48b' };
     const product = {

@@ -74,7 +74,7 @@ integration('batch activation against PostgreSQL',()=>{
     return {actor,product,batch:generated.batch,generated,source:randomUUID()};
   }
   async function reveal(f:Awaited<ReturnType<typeof fixture>>){return activation.reveal(f.batch.batchReference,f.actor,{password,reason:'First authorised reveal'},f.source)}
-  async function activate(f:Awaited<ReturnType<typeof fixture>>,pin?:string,service=activation){return service.activate(displayBatchReference(f.batch.batchReference),f.actor,{confirm:true,productBatchReference:'LOT-001',password,pin:pin?.replace(/\s/g,'')},f.source)}
+  async function activate(f:Awaited<ReturnType<typeof fixture>>,pin?:string,service=activation){return service.activate(displayBatchReference(f.batch.batchReference),f.actor,{confirm:true,productId:f.product.id,productBatchReference:'LOT-001',password,pin:pin?.replace(/\s/g,'')},f.source)}
 
   it('migrates issued IDs and codes without changing the HMAC input',async()=>{
     const batch=await db.getRepository(CodeBatchEntity).findOneByOrFail({id:legacyId});
@@ -102,7 +102,7 @@ integration('batch activation against PostgreSQL',()=>{
     // The same freshly supplied credential must also satisfy PIN step-up authentication.
     await db.getRepository(UserEntity).update({id:f.actor.userId},{mustChangePassword:true});
     const pin=await reveal(f);
-    await expect(activation.activate(f.batch.id,f.actor,{confirm:true,productBatchReference:'LOT-001',pin:pin.pin.replace(/\s/g,'')},f.source)).rejects.toMatchObject({code:'STEP_UP_REQUIRED'});
+    await expect(activation.activate(f.batch.id,f.actor,{confirm:true,productId:f.product.id,productBatchReference:'LOT-001',pin:pin.pin.replace(/\s/g,'')},f.source)).rejects.toMatchObject({code:'STEP_UP_REQUIRED'});
     expect(await db.getRepository(BatchActivationEventEntity).countBy({batchId:f.batch.id,action:'step_up_failed'})).toBe(2);
   });
   it('stores only a batch-bound HMAC; resets invalidate prior PINs and rotation retains verification',async()=>{
@@ -161,7 +161,7 @@ integration('batch activation against PostgreSQL',()=>{
     const f=await fixture(Fulfillment.SelfPrint);
     const code=await db.getRepository(VerificationCodeEntity).findOneByOrFail({batchId:f.batch.id});
     expect(await codes.verify(code.code)).toMatchObject({valid:false,status:'unactivated'});
-    await expect(activation.activate(f.batch.id,f.actor,{confirm:false,productBatchReference:'LOT-001'},f.source)).rejects.toMatchObject({code:'ACTIVATION_CONFIRMATION_REQUIRED'});
+    await expect(activation.activate(f.batch.id,f.actor,{confirm:false,productId:f.product.id,productBatchReference:'LOT-001'},f.source)).rejects.toMatchObject({code:'ACTIVATION_CONFIRMATION_REQUIRED'});
     expect(await activate(f)).toMatchObject({activatedCodes:100});
     expect(await db.getRepository(BatchActivationEventEntity).countBy({batchId:f.batch.id,action:'activated'})).toBe(1);
     await expect(db.query('DELETE FROM batch_activation_events WHERE "batchId"=$1',[f.batch.id])).rejects.toThrow('append-only');

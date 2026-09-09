@@ -23,6 +23,7 @@ import { OrganizationEntity } from '../onboarding/onboarding.entity';
 import { ProductEntity } from '../products/product.entity';
 import { RequestContext } from '../common/request-context';
 import { AuditLogEntity } from '../operations/operations.entity';
+import { isInternalProductName } from '../codes/internal-products';
 
 function formatDisplayDate(value?: Date | string | null): string {
   if (!value) return '—';
@@ -137,7 +138,9 @@ export class PlatformManageCodesService {
         vendorId: batch.organizationId,
         vendorName: org?.companyName || 'Organization',
         vendorEmail: org?.administrator?.email || '—',
-        productName: product?.name || '—',
+        productName: isInternalProductName(product?.name)
+          ? 'Selected during activation'
+          : product?.name || '—',
         labelType: batch.labelType,
         totalCodes: batch.quantity,
         activeCodes: total > 0 ? active : null,
@@ -202,8 +205,12 @@ export class PlatformManageCodesService {
         releasedAt: batch.releasedAt,
         masterQrPayload: masterQrPayload(batch),
       vendorName: org?.companyName || 'Organization',
-      product: product?.name || '—',
-      productUnit: product?.form || '—',
+      product: isInternalProductName(product?.name)
+        ? 'Selected during activation'
+        : product?.name || '—',
+      productUnit: isInternalProductName(product?.name)
+        ? 'Unassigned'
+        : product?.form || '—',
       labelType: batch.labelType,
       quantity: batch.quantity,
       totalCost: '—',

@@ -22,9 +22,8 @@ describe('admin portal request contracts', () => {
     expect(await validate(dto, { whitelist: true, forbidNonWhitelisted: true })).toEqual([]);
   });
 
-  it('accepts code generation with the selected vendor product', async () => {
+  it('accepts code generation assigned to a vendor without a product', async () => {
     const dto = plainToInstance(PlatformGenerateBatchDto, {
-      productId: '9e38c56a-cdf2-4dc4-aa88-ea7cbff2fadd',
       labels: ['micro'],
       quantity: 5000,
       vendorId: '319968e2-458f-440e-8c68-91dcf8261c07',
@@ -34,7 +33,6 @@ describe('admin portal request contracts', () => {
     });
 
     expect(await validate(dto, { whitelist: true, forbidNonWhitelisted: true })).toEqual([]);
-    expect(dto.productId).toBe('9e38c56a-cdf2-4dc4-aa88-ea7cbff2fadd');
   });
 
   it('accepts open-market generation without vendor or product fields', async () => {

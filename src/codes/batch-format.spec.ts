@@ -27,7 +27,7 @@ describe('batch identifiers and activation inputs', () => {
     expect(()=>canonicalBatchId('CB-7K4M9X2PR6')).toThrow();
   });
   it('preserves PIN leading zeros and requires an explicit confirmation', () => {
-    const dto=plainToInstance(ActivateCodeBatchDto,{confirm:true,productBatchReference:'LOT-1',pin:'0012 3456'});
+    const dto=plainToInstance(ActivateCodeBatchDto,{confirm:true,productId:'9e38c56a-cdf2-4dc4-aa88-ea7cbff2fadd',productBatchReference:'LOT-1',pin:'0012 3456'});
     expect(dto.pin).toBe('00123456');expect(validateSync(dto)).toHaveLength(0);
     expect(validateSync(plainToInstance(ActivateCodeBatchDto,{...dto,pin:'123456'}))).not.toHaveLength(0);
     expect(validateSync(plainToInstance(ActivateCodeBatchDto,{...dto,confirm:false}))).not.toHaveLength(0);

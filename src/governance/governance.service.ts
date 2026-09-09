@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomInt, randomUUID } from 'crypto';
 import * as argon2 from 'argon2';
-import { Between, Brackets, DataSource, ILike, In, IsNull } from 'typeorm';
+import { And, Between, Brackets, DataSource, ILike, In, IsNull, Not } from 'typeorm';
 import { UserEntity } from '../auth/auth.entity';
 import { UserRole } from '../auth/authorization';
 import { pageOf } from '../common/api-response';
@@ -10,6 +10,7 @@ import { DomainError } from '../common/domain-error';
 import { RequestContext, submittedBy } from '../common/request-context';
 import { toOrder } from '../common/page-query.dto';
 import { VerificationCodeEntity, VerificationCodeStatus, VerificationEventEntity } from '../codes/code.entity';
+import { ASSIGNED_BATCH_PLACEHOLDER_PRODUCT } from '../codes/internal-products';
 import { OrganizationDocumentEntity, OrganizationEntity } from '../onboarding/onboarding.entity';
 import { AuditLogEntity } from '../operations/operations.entity';
 import { ProductEntity } from '../products/product.entity';
@@ -247,7 +248,13 @@ export class GovernanceService {
 
   async listProducts(q: PlatformProductQueryDto) {
     const repo = this.db.getRepository(ProductEntity);
-    const where: any = { ...(q.status ? { status: q.status } : {}), ...(q.organizationId ? { organizationId: q.organizationId } : {}), ...(q.search ? { name: ILike(`%${q.search}%`) } : {}) };
+    const where: any = {
+      name: q.search
+        ? And(ILike(`%${q.search}%`), Not(ASSIGNED_BATCH_PLACEHOLDER_PRODUCT))
+        : Not(ASSIGNED_BATCH_PLACEHOLDER_PRODUCT),
+      ...(q.status ? { status: q.status } : {}),
+      ...(q.organizationId ? { organizationId: q.organizationId } : {}),
+    };
     const order = toOrder(q.sortBy, q.sortDirection, ['createdAt','updatedAt','name','status','totalCodes','scanned'] as const, 'updatedAt');
     const [rows, total] = await repo.findAndCount({ where, order, skip: (q.page - 1) * q.pageSize, take: q.pageSize });
     const orgIds = [...new Set(rows.map((r) => r.organizationId))];
@@ -256,7 +263,7 @@ export class GovernanceService {
     return pageOf(rows.map((p) => ({ ...p, vendor: names.get(p.organizationId) ?? 'Organization', vendorId: p.organizationId, codes: p.totalCodes, scans: p.scanned })), total, q.page, q.pageSize, q.sortBy, q.sortDirection);
   }
   async productMetrics() {
-    const rows = await this.db.getRepository(ProductEntity).createQueryBuilder('p').select('p.status','status').addSelect('COUNT(*)','count').groupBy('p.status').getRawMany();
+    const rows = await this.db.getRepository(ProductEntity).createQueryBuilder('p').select('p.status','status').addSelect('COUNT(*)','count').where('p.name != :internalName',{internalName:ASSIGNED_BATCH_PLACEHOLDER_PRODUCT}).groupBy('p.status').getRawMany();
     const counts = Object.fromEntries(rows.map((r) => [r.status, Number(r.count)]));
     return { total: Object.values(counts).reduce((a: number, b: any) => a + Number(b), 0), verified: counts.active ?? 0, pendingApproval: counts.pending ?? 0, archived: counts.archived ?? 0, rejected: counts.rejected ?? 0 };
   }

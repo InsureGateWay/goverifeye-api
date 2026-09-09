@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { Equals, IsOptional, IsString, Length, Matches } from 'class-validator';
+import { Equals, IsOptional, IsString, IsUUID, Length, Matches } from 'class-validator';
 
 export class RevealBatchPinDto {
   @ApiProperty({ description: 'Current account password, checked again independently of the active session.' })
@@ -12,6 +12,8 @@ export class RevealBatchPinDto {
 export class ActivateCodeBatchDto {
   @ApiProperty({ example: true, description: 'Explicit confirmation to activate this entire allocation.' })
   @Equals(true) confirm!: boolean;
+  @ApiProperty({ format: 'uuid', description: 'Active vendor product to bind to every code in the batch.' })
+  @IsUUID() productId!: string;
   @ApiProperty({ example: 'LOT-2026-0906', description: 'Manufacturer production lot reference.' })
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
   @IsString() @Length(1, 100) productBatchReference!: string;

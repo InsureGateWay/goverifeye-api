@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { createHash, createHmac, randomInt, timingSafeEqual } from 'crypto';
 import * as argon2 from 'argon2';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource, EntityManager, In } from 'typeorm';
 import batchActivationConfig, { BatchActivationOptions } from '../config/batch-activation.config';
 import { UserEntity } from '../auth/auth.entity';
 import { RequestContext } from '../common/request-context';
@@ -14,6 +14,7 @@ import { BatchStatus, VerificationCodeStatus } from './code.enums';
 import { BatchActivationEventEntity, BatchActivationLimitEntity, ProductBatchEntity } from './batch-activation.entity';
 import { ActivateCodeBatchDto, RevealBatchPinDto } from './batch-activation.dto';
 import { batchLookup, canonicalBatchId, displayBatchReference } from './batch-format';
+import { isInternalProductName } from './internal-products';
 
 const COOLDOWN_MS = 15 * 60_000;
 type Failure = { error: DomainError };
@@ -75,16 +76,34 @@ export class BatchActivationService {
       if (controlled && !this.validPin(batch, input.pin ?? '')) return this.failedAttempt(manager, actor, batch, limits, 'pin_failed', 'The activation PIN is invalid', 'BATCH_ACTIVATION_INVALID');
       const lotReference = input.productBatchReference?.trim();
       if (!lotReference || lotReference.length > 100) return this.reject(manager, actor, batch, 'binding_rejected', 'Manufacturer product lot is required', 'PRODUCT_BATCH_REQUIRED', 400);
-      const product = await manager.findOne(ProductEntity, { where: { id: batch.productId, organizationId: actor.organizationId, status: ProductStatus.Active }, lock: { mode: 'pessimistic_write' } });
+      const productIds = [...new Set([batch.productId, input.productId])].sort();
+      const lockedProducts = await manager.find(ProductEntity, {
+        where: { id: In(productIds), organizationId: actor.organizationId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const boundProduct = lockedProducts.find(product => product.id === batch.productId);
+      const product = lockedProducts.find(product => product.id === input.productId);
+      if (!product || product.status !== ProductStatus.Active || isInternalProductName(product.name)) {
+        return this.reject(manager, actor, batch, 'binding_rejected', 'Select an active vendor product', 'PRODUCT_NOT_ACTIVE', 409);
+      }
+      if (boundProduct?.id !== product.id && !isInternalProductName(boundProduct?.name)) {
+        return this.reject(manager, actor, batch, 'binding_rejected', 'The product already assigned to this batch cannot be changed', 'BATCH_PRODUCT_IMMUTABLE', 409);
+      }
       const namespace = await manager.findOneBy(CodeNamespaceEntity, { organizationId: actor.organizationId, namespace: batch.namespace! });
       const codes = await manager.getRepository(VerificationCodeEntity).createQueryBuilder('code').where('code.batchId = :batchId', { batchId: batch.id }).orderBy('code.id', 'ASC').setLock('pessimistic_write').getMany();
-      if (!product || !namespace || codes.length !== batch.quantity || codes.some(code => code.organizationId !== batch.allocationVendorId || code.productId !== batch.productId || code.namespace !== batch.namespace || code.allocationId !== batch.id || code.unitId !== code.id || code.status !== VerificationCodeStatus.Allocated)) return this.reject(manager, actor, batch, 'binding_rejected', 'Vendor, namespace or product binding is invalid', 'BATCH_BINDING_INVALID', 409);
+      if (!boundProduct || !namespace || codes.length !== batch.quantity || codes.some(code => code.organizationId !== batch.allocationVendorId || code.productId !== batch.productId || code.namespace !== batch.namespace || code.allocationId !== batch.id || code.unitId !== code.id || code.status !== VerificationCodeStatus.Allocated)) return this.reject(manager, actor, batch, 'binding_rejected', 'Vendor, namespace or product binding is invalid', 'BATCH_BINDING_INVALID', 409);
       // Product lock serializes creation of the same manufacturer lot across batches.
       let lot = await manager.findOneBy(ProductBatchEntity, { organizationId: actor.organizationId, productId: product.id, lotReference });
       if (!lot) lot = await manager.save(ProductBatchEntity, manager.create(ProductBatchEntity, { organizationId: actor.organizationId, productId: product.id, lotReference, manufacturingDate: batch.manufacturingDate, expiryDate: batch.expiryDate }));
       if ((batch.manufacturingDate && lot.manufacturingDate !== batch.manufacturingDate) || (batch.expiryDate && lot.expiryDate !== batch.expiryDate)) return this.reject(manager, actor, batch, 'binding_rejected', 'Product lot dates conflict with this batch', 'PRODUCT_BATCH_DATES_CONFLICT', 409);
       const now = new Date();
-      await manager.update(VerificationCodeEntity, { batchId: batch.id, organizationId: actor.organizationId, status: VerificationCodeStatus.Allocated }, { status: VerificationCodeStatus.MarketActive, productBatchId: lot.id, activatedAt: now, activatedBy: actor.userId });
+      await manager.update(VerificationCodeEntity, { batchId: batch.id, organizationId: actor.organizationId, status: VerificationCodeStatus.Allocated }, { productId: product.id, status: VerificationCodeStatus.MarketActive, productBatchId: lot.id, activatedAt: now, activatedBy: actor.userId });
+      if (boundProduct.id !== product.id) {
+        boundProduct.totalCodes = Math.max(0, Number(boundProduct.totalCodes ?? 0) - batch.quantity);
+        product.totalCodes = Number(product.totalCodes ?? 0) + batch.quantity;
+        await manager.save(ProductEntity, [boundProduct, product]);
+        batch.productId = product.id;
+      }
       batch.productBatchId = lot.id;
       batch.status = BatchStatus.MarketActive;
       batch.activatedAt = now;
@@ -93,7 +112,7 @@ export class BatchActivationService {
       batch.activationPepperVersion = null;
       await manager.save(CodeBatchEntity, batch);
       await this.event(manager, actor, batch, 'activated', 'success');
-      return { batchReference: displayBatchReference(batch.batchReference), activatedCodes: codes.length, activatedAt: now, productBatchId: lot.id };
+      return { batchReference: displayBatchReference(batch.batchReference), activatedCodes: codes.length, activatedAt: now, productId: product.id, productBatchId: lot.id };
     });
     // Failed attempts must commit before the HTTP error is raised.
     if ('error' in result) throw result.error;

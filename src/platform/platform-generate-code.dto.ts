@@ -14,10 +14,6 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class PlatformGenerateBatchDto {
-  @ApiProperty({ format: 'uuid', description: 'Approved product belonging to the assigned vendor.' })
-  @IsUUID()
-  productId!: string;
-
   @ApiProperty({ example: ['micro', 'main'], isArray: true })
   @IsArray()
   @ArrayMinSize(1)
