@@ -21,6 +21,10 @@ export class PlatformProductQueryDto extends PageQueryDto {
   @IsOptional() @IsUUID() organizationId?: string;
   @IsIn(['createdAt', 'updatedAt', 'name', 'status', 'totalCodes', 'scanned']) override sortBy = 'updatedAt';
 }
+export class PlatformProductDetailsQueryDto extends PageQueryDto {
+  @IsOptional() @IsDateString() from?: string;
+  @IsOptional() @IsDateString() to?: string;
+}
 export class PlatformProductStatusDto {
   @IsIn(['active', 'pending', 'archived', 'rejected']) status!: string;
   @IsOptional() @IsString() @Length(1, 4000) reason?: string;

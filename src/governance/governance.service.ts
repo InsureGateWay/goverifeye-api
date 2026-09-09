@@ -2,14 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomInt, randomUUID } from 'crypto';
 import * as argon2 from 'argon2';
-import { Brackets, DataSource, ILike, In, IsNull } from 'typeorm';
+import { Between, Brackets, DataSource, ILike, In, IsNull } from 'typeorm';
 import { UserEntity } from '../auth/auth.entity';
 import { UserRole } from '../auth/authorization';
 import { pageOf } from '../common/api-response';
 import { DomainError } from '../common/domain-error';
 import { RequestContext, submittedBy } from '../common/request-context';
 import { toOrder } from '../common/page-query.dto';
-import { VerificationEventEntity } from '../codes/code.entity';
+import { VerificationCodeEntity, VerificationCodeStatus, VerificationEventEntity } from '../codes/code.entity';
 import { OrganizationDocumentEntity, OrganizationEntity } from '../onboarding/onboarding.entity';
 import { AuditLogEntity } from '../operations/operations.entity';
 import { ProductEntity } from '../products/product.entity';
@@ -26,7 +26,7 @@ import { vendorAccountCreatedEmail } from '../operations/email-templates';
 import {
   AddCaseNoteDto, AuditExceptionQueryDto, CreateAuditExceptionDto,
   CreateChangeRequestDto, CreateFraudCaseDto, CreateIncidentDto,
-  FraudCaseQueryDto, InviteVendorDto, PlatformProductQueryDto,
+  FraudCaseQueryDto, InviteVendorDto, PlatformProductDetailsQueryDto, PlatformProductQueryDto,
   ResolveAuditExceptionDto, UpdateFraudCaseDto, UpdateIncidentDto,
   VendorLifecycleDto, ChangeRequestQueryDto, OptionQueryDto, CreateOptionDto, UpdateOptionDto,
   ExportQueryDto,
@@ -265,6 +265,36 @@ export class GovernanceService {
     if (!row) throw new DomainError('Product was not found', 'PRODUCT_NOT_FOUND', 404);
     const org = await this.db.getRepository(OrganizationEntity).findOneBy({ id: row.organizationId });
     return { ...row, vendor: org?.companyName ?? 'Organization', vendorId: row.organizationId, codes: row.totalCodes, scans: row.scanned };
+  }
+  async productDetails(id:string,q:PlatformProductDetailsQueryDto){
+    const product=await this.db.getRepository(ProductEntity).findOneBy({id});
+    if(!product)throw new DomainError('Product was not found','PRODUCT_NOT_FOUND',404);
+    const today=new Date();today.setUTCHours(23,59,59,999);
+    const rangeEnd=q.to?new Date(`${q.to.slice(0,10)}T23:59:59.999Z`):today,rangeStart=q.from?new Date(`${q.from.slice(0,10)}T00:00:00.000Z`):new Date(rangeEnd);
+    if(!q.from){rangeStart.setUTCHours(0,0,0,0);rangeStart.setUTCDate(rangeStart.getUTCDate()-6)}
+    if(rangeStart>rangeEnd)throw new DomainError('Start date must be on or before end date','INVALID_DATE_RANGE',400);
+    const rangeDays=Math.floor((Date.UTC(rangeEnd.getUTCFullYear(),rangeEnd.getUTCMonth(),rangeEnd.getUTCDate())-rangeStart.getTime())/86_400_000)+1;
+    if(rangeDays>366)throw new DomainError('Product scan trend date range cannot exceed 366 days','DATE_RANGE_TOO_LARGE',400);
+    const events=this.db.getRepository(VerificationEventEntity),codes=this.db.getRepository(VerificationCodeEntity),audits=this.db.getRepository(AuditLogEntity),locationQuery=events.createQueryBuilder('event').select(`COALESCE(NULLIF(event.location, ''), 'Unknown')`,'location').addSelect('COUNT(*)','scans').where('event.organizationId = :organizationId',{organizationId:product.organizationId}).andWhere('event.productId = :productId',{productId:id}).groupBy(`COALESCE(NULLIF(event.location, ''), 'Unknown')`).orderBy('scans','DESC').limit(1);
+    const[activeCodes,trendEvents,suspiciousResult,firstEvent,lastEvent,topLocation,activity]=await Promise.all([
+      codes.countBy({organizationId:product.organizationId,productId:id,status:VerificationCodeStatus.MarketActive}),
+      events.find({select:{createdAt:true},where:{organizationId:product.organizationId,productId:id,createdAt:Between(rangeStart,rangeEnd)},order:{createdAt:'ASC'}}),
+      events.findAndCount({where:{organizationId:product.organizationId,productId:id,outcome:'suspicious'},order:{createdAt:'DESC'},skip:(q.page-1)*q.pageSize,take:q.pageSize}),
+      events.findOne({select:{createdAt:true},where:{organizationId:product.organizationId,productId:id},order:{createdAt:'ASC'}}),
+      events.findOne({select:{createdAt:true},where:{organizationId:product.organizationId,productId:id},order:{createdAt:'DESC'}}),
+      locationQuery.getRawOne<{location:string;scans:string}>(),
+      audits.find({where:{organizationId:product.organizationId,resourceId:id},order:{createdAt:'DESC'},take:20}),
+    ]);
+    const trend=Array.from({length:rangeDays},(_,offset)=>{const date=new Date(rangeStart);date.setUTCDate(date.getUTCDate()+offset);return{date:date.toISOString(),scans:0}}),trendByDate=new Map(trend.map(point=>[point.date.slice(0,10),point]));
+    for(const event of trendEvents){const point=trendByDate.get(new Date(event.createdAt).toISOString().slice(0,10));if(point)point.scans++}
+    const[suspiciousEvents,suspiciousTotal]=suspiciousResult;
+    return{
+      id:product.id,name:product.name,form:product.form,manufacturer:product.manufacturer,description:product.description,status:product.status,imageUrl:product.imageUrl,createdAt:product.createdAt,updatedAt:product.updatedAt,totalCodes:product.totalCodes,activeCodes,scanned:product.scanned,suspicious:suspiciousTotal,topRegion:topLocation?.location??null,firstScannedAt:firstEvent?.createdAt??null,lastScannedAt:lastEvent?.createdAt??null,
+      trendRange:{from:rangeStart.toISOString().slice(0,10),to:rangeEnd.toISOString().slice(0,10)},trend,
+      suspiciousEvents:suspiciousEvents.map(event=>({id:event.id,createdAt:event.createdAt,location:event.location,ipAddress:event.ipAddress,customerComplaint:event.customerComplaint,riskScore:event.riskScore,riskReasons:event.riskReasons??[]})),
+      suspiciousPage:q.page,suspiciousPageSize:q.pageSize,suspiciousTotal,suspiciousTotalPages:Math.max(1,Math.ceil(suspiciousTotal/q.pageSize)),
+      activity:activity.map(row=>({id:row.id,action:row.action,createdAt:row.createdAt,details:typeof row.metadata?.details==='string'?row.metadata.details:undefined})),
+    };
   }
   async createProductForVendor(u: RequestContext, vendorId: string, dto: CreateProductDto) {
     await this.approvedVendor(vendorId);

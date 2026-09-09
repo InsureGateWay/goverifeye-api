@@ -8,7 +8,7 @@ import {
   AddCaseNoteDto, AuditExceptionQueryDto, CreateAuditExceptionDto,
   CreateChangeRequestDto, CreateFraudCaseDto, CreateIncidentDto,
   ExportQueryDto, FraudCaseQueryDto, InviteVendorDto, MfaCodeDto,
-  MfaDisableDto, PlatformProductQueryDto, PlatformProductStatusDto,
+  MfaDisableDto, PlatformProductDetailsQueryDto, PlatformProductQueryDto, PlatformProductStatusDto,
   ResolveAuditExceptionDto, UpdateFraudCaseDto, UpdateIncidentDto,
   VendorLifecycleDto, DeleteVendorDto, ReviewChangeRequestDto, ChangeRequestQueryDto, OptionQueryDto, CreateOptionDto, UpdateOptionDto, SetVendorLogoDto,
 } from './governance.dto';
@@ -41,6 +41,7 @@ export class GovernanceController {
   @Roles(UserRole.SuperAdmin) @Get('platform/products') products(@Query()q:PlatformProductQueryDto){return this.service.listProducts(q);}
   @Roles(UserRole.SuperAdmin) @Get('platform/products/export') @Header('Content-Type','text/csv; charset=utf-8') async productExport(@Query()q:ExportQueryDto,@Res()res:Response){res.attachment('platform-products.csv').send(await this.service.productsCsv(q.limit));}
   @Roles(UserRole.SuperAdmin) @Get('platform/products/:id/approval-request') async productRequest(@Param('id')id:string){return {item:await this.service.product(id)};}
+  @Roles(UserRole.SuperAdmin) @Get('platform/products/:id/details') productDetails(@Param('id')id:string,@Query()q:PlatformProductDetailsQueryDto){return this.service.productDetails(id,q);}
   @Roles(UserRole.SuperAdmin) @Get('platform/products/:id') product(@Param('id')id:string){return this.service.product(id);}
   @Roles(UserRole.SuperAdmin) @Patch('platform/products/:id/status') productStatus(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:PlatformProductStatusDto){return this.service.setProductStatus(u,id,dto.status,dto.reason);}
   @Roles(UserRole.SuperAdmin) @Patch('platform/products/:id/archive') archiveProduct(@CurrentUser()u:RequestContext,@Param('id')id:string){return this.service.setProductStatus(u,id,'archived');}
