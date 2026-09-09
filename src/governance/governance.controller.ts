@@ -28,7 +28,7 @@ export class GovernanceController {
   @Roles(UserRole.SuperAdmin) @Patch('platform/options/:id') updateOption(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:UpdateOptionDto){return this.service.updateOption(u,id,dto);}
   @Roles(UserRole.SuperAdmin) @Get('platform/options/:id/history') optionHistory(@Param('id')id:string){return this.service.optionHistoryList(id);}
 
-  @Post('settings/change-requests') createChange(@CurrentUser()u:RequestContext,@Body()dto:CreateChangeRequestDto){return this.service.createChangeRequest(u,dto);}
+  @Roles(UserRole.VendorAdmin) @Post('settings/change-requests') createChange(@CurrentUser()u:RequestContext,@Body()dto:CreateChangeRequestDto){return this.service.createChangeRequest(u,dto);}
   @Get('settings/profile/history') profileHistory(@CurrentUser()u:RequestContext){return this.service.profileHistory(u.organizationId);}
   @Get('settings/2fa/status') mfaStatus(@CurrentUser()u:RequestContext){return this.service.mfaStatus(u);}
   @Post('settings/2fa/enroll') enrollMfa(@CurrentUser()u:RequestContext){return this.service.beginMfa(u);}
@@ -61,6 +61,7 @@ export class GovernanceController {
   @Roles(UserRole.SuperAdmin) @Delete('platform/vendors/:id') deleteVendor(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:DeleteVendorDto){return this.service.deleteVendor(u,id,dto.confirmation);}
 
   @Roles(UserRole.SuperAdmin) @Get('platform/fraud-alerts/overview') fraudOverview(){return this.service.fraudOverview();}
+  @Roles(UserRole.SuperAdmin) @Post('platform/fraud-alerts/run-background-scan') runBackgroundAnomalyScan(){return this.service.runBackgroundAnomalyScan();}
   @Roles(UserRole.SuperAdmin) @Get('platform/fraud-alerts') fraud(@Query()q:FraudCaseQueryDto){return this.service.listFraud(q);}
   @Roles(UserRole.SuperAdmin) @Post('platform/fraud-alerts') createFraud(@CurrentUser()u:RequestContext,@Body()dto:CreateFraudCaseDto){return this.service.createFraud(u,dto);}
   @Roles(UserRole.SuperAdmin) @Patch('platform/fraud-alerts/:id') updateFraud(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:UpdateFraudCaseDto){return this.service.updateFraud(u,id,dto);}

@@ -60,6 +60,7 @@ describe('GovernanceService profile history', () => {
       null as never,
       null as never,
       null as never,
+      null as never,
     );
 
     const result = await service.profileHistory('org-1');

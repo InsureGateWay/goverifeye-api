@@ -2,7 +2,19 @@ import { IsBoolean, IsDateString, IsEmail, IsIn, IsInt, IsOptional, IsString, Is
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AddressDto } from '../onboarding/onboarding.dto';
 import { ValidateNested } from 'class-validator';
-export class AuditQueryDto extends PageQueryDto { @IsOptional() @IsString() actorId?:string; @IsOptional() @IsString() @MaxLength(200) actor?:string; @IsOptional() @IsString() action?:string; @IsOptional() @IsString() resourceType?:string; @IsOptional() @IsString() resourceId?:string; @IsOptional() @IsString() status?:string; @IsOptional() @IsDateString() from?:string; @IsOptional() @IsDateString() to?:string; @IsIn(['createdAt','action','resourceType','status']) override sortBy='createdAt'; }
+export class AuditQueryDto extends PageQueryDto {
+  @IsOptional() @IsString() actorId?: string;
+  /** Sheet2 #58/59 — filter by actor name or email (UI user filter). */
+  @IsOptional() @IsString() @MaxLength(200) actor?: string;
+  @IsOptional() @IsString() action?: string;
+  @IsOptional() @IsString() resourceType?: string;
+  @IsOptional() @IsString() resourceId?: string;
+  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsDateString() from?: string;
+  @IsOptional() @IsDateString() to?: string;
+  @IsIn(['createdAt', 'action', 'resourceType', 'status']) override sortBy = 'createdAt';
+}
+
 export class AuditSummaryQueryDto { @IsOptional() @IsIn(['daily','weekly','monthly']) range:'daily'|'weekly'|'monthly'='daily'; @IsOptional() @IsDateString() from?:string; @IsOptional() @IsDateString() to?:string; }
 export class NotificationQueryDto extends PageQueryDto { @IsOptional() @Transform(({value})=>value===true||value==='true'?true:value===false||value==='false'?false:value) @IsBoolean() read?:boolean; @IsOptional() @IsString() type?:string; @IsIn(['createdAt','type','title','isRead']) override sortBy='createdAt'; }
 export class UpdateProfileDto { @ApiProperty({example:'Ada'}) @IsString() @Length(1,100) firstName!:string; @ApiProperty({example:'Okafor'}) @IsString() @Length(1,100) lastName!:string; @ApiPropertyOptional({example:'Compliance Manager'}) @IsOptional() @IsString() @Length(1,100) jobTitle?:string; @ApiPropertyOptional({example:'+2348012345678'}) @IsOptional() @IsString() phone?:string; @ApiPropertyOptional({format:'uri'}) @IsOptional() @IsUrl() profileImageUrl?:string; }

@@ -13,6 +13,7 @@ import { VerificationCodeEntity, VerificationCodeStatus, VerificationEventEntity
 import { ASSIGNED_BATCH_PLACEHOLDER_PRODUCT } from '../codes/internal-products';
 import { OrganizationDocumentEntity, OrganizationEntity } from '../onboarding/onboarding.entity';
 import { AuditLogEntity } from '../operations/operations.entity';
+import { ApprovalDecisionEntity } from '../approvals/approval.entity';
 import { ProductEntity } from '../products/product.entity';
 import { ProductStatus } from '../products/product.model';
 import { CreateProductDto } from '../products/dto/product.dto';
@@ -24,6 +25,10 @@ import { MalwareScannerService } from '../onboarding/malware-scanner.service';
 import { ReliabilityService } from '../operations/reliability.service';
 import { EmailTemplateService } from '../operations/email-template.service';
 import { vendorAccountCreatedEmail } from '../operations/email-templates';
+import {
+  AnomalyProcessingService,
+  ANOMALY_DETECTION_CATALOG,
+} from '../codes/anomaly-processing.service';
 import {
   AddCaseNoteDto, AuditExceptionQueryDto, CreateAuditExceptionDto,
   CreateChangeRequestDto, CreateFraudCaseDto, CreateIncidentDto,
@@ -72,7 +77,7 @@ export type UploadedVendorFile = { buffer: Buffer; size: number; mimetype: strin
 
 @Injectable()
 export class GovernanceService {
-  constructor(private readonly db: DataSource, private readonly config: ConfigService, private readonly documents: DocumentStorageService, private readonly documentSecurity: DocumentSecurityService, private readonly malware: MalwareScannerService, private readonly reliability: ReliabilityService, private readonly emailTemplates: EmailTemplateService, private readonly productService: ProductService, private readonly productImages: ProductImageStorageService) {}
+  constructor(private readonly db: DataSource, private readonly config: ConfigService, private readonly documents: DocumentStorageService, private readonly documentSecurity: DocumentSecurityService, private readonly malware: MalwareScannerService, private readonly reliability: ReliabilityService, private readonly emailTemplates: EmailTemplateService, private readonly productService: ProductService, private readonly productImages: ProductImageStorageService, private readonly anomalyProcessing: AnomalyProcessingService) {}
   private audit<T extends object>(u: RequestContext, data: T): T & { createdById: string; updatedById: string } {
     return { ...data, createdById: u.userId, updatedById: u.userId };
   }
@@ -97,6 +102,14 @@ export class GovernanceService {
   }
 
   async createChangeRequest(u: RequestContext, dto: CreateChangeRequestDto) {
+    // Sheet1 #2 — Vendor Staff must not submit company profile change requests.
+    if (u.role !== UserRole.VendorAdmin && u.role !== 'vendor_admin') {
+      throw new DomainError(
+        'Only a Vendor Admin can request company profile changes',
+        'CHANGE_REQUEST_FORBIDDEN',
+        403,
+      );
+    }
     const repo = this.db.getRepository(OrganizationChangeRequestEntity);
     const row = repo.create(this.audit(u, {
       organizationId: u.organizationId,
@@ -240,9 +253,33 @@ export class GovernanceService {
   async optionHistoryList(id:string){return this.db.getRepository(ApplicationOptionHistoryEntity).find({where:{optionId:id},order:{createdAt:'DESC'},take:100});}
   async listChangeRequests(q: ChangeRequestQueryDto) {
     const repo = this.db.getRepository(OrganizationChangeRequestEntity);
-    const where:any = { ...(q.status ? { status:q.status } : {}), ...(q.organizationId ? { organizationId:q.organizationId } : {}), ...(q.search ? { details:ILike(`%${q.search}%`) } : {}) };
-    const [rows,total]=await repo.findAndCount({where,order:{createdAt:'DESC'},skip:(q.page-1)*q.pageSize,take:q.pageSize});
-    return pageOf(rows,total,q.page,q.pageSize,'createdAt','desc');
+    const where: any = {
+      ...(q.status ? { status: q.status } : {}),
+      ...(q.organizationId ? { organizationId: q.organizationId } : {}),
+      ...(q.search ? { details: ILike(`%${q.search}%`) } : {}),
+    };
+    const [rows, total] = await repo.findAndCount({
+      where,
+      order: { createdAt: 'DESC' },
+      skip: (q.page - 1) * q.pageSize,
+      take: q.pageSize,
+    });
+    // Sheet2 #36 — include vendor name for Admin review queue.
+    const orgIds = [...new Set(rows.map((row) => row.organizationId))];
+    const orgs = orgIds.length
+      ? await this.db.getRepository(OrganizationEntity).find({ where: { id: In(orgIds) } })
+      : [];
+    const names = new Map(orgs.map((org) => [org.id, org.companyName]));
+    const items = rows.map((row) => ({
+      ...row,
+      reference: `CR-${row.id.slice(0, 8).toUpperCase()}`,
+      vendorName: names.get(row.organizationId) || 'Organization',
+      category:
+        typeof row.requestedChanges?.category === 'string'
+          ? row.requestedChanges.category
+          : 'Other',
+    }));
+    return pageOf(items, total, q.page, q.pageSize, 'createdAt', 'desc');
   }
   async reviewChangeRequest(u:RequestContext,id:string,status:string,notes?:string){const repo=this.db.getRepository(OrganizationChangeRequestEntity),row=await repo.findOneBy({id});if(!row)throw new DomainError('Change request was not found','CHANGE_REQUEST_NOT_FOUND',404);if(row.status!=='pending')throw new DomainError('Change request has already been reviewed','CHANGE_REQUEST_STATE_INVALID',409);Object.assign(row,{status,reviewNotes:notes,reviewedById:u.userId,reviewedAt:new Date(),updatedById:u.userId});await repo.save(row);await this.writeAudit(u,`organization.change_request.${status}`,'organization_change_request',id,{notes});return row;}
 
@@ -504,6 +541,16 @@ export class GovernanceService {
       if (!org) throw new DomainError('Vendor was not found', 'VENDOR_NOT_FOUND', 404);
       const fromStatus = org.status; org.status = toStatus; if(toStatus==='approved')org.approvedBy=submittedBy(u); await m.save(org); await m.update(UserEntity,{organizationId:id},{isActive:toStatus==='approved'});
       await m.save(VendorStatusHistoryEntity, m.create(VendorStatusHistoryEntity, this.audit(u, { organizationId: id, fromStatus, toStatus, reason: dto.reason })));
+      if (toStatus === 'approved' || toStatus === 'rejected') {
+        await m.save(ApprovalDecisionEntity, m.create(ApprovalDecisionEntity, {
+          resourceType: 'onboarding',
+          resourceId: id,
+          organizationId: id,
+          decision: toStatus === 'approved' ? 'approved' : 'rejected',
+          reviewedBy: u.userId,
+          notes: dto.reason,
+        }));
+      }
       await m.save(AuditLogEntity, m.create(AuditLogEntity, { organizationId: u.organizationId, actorId: u.userId, action: `vendor.${toStatus}`, resourceType: 'organization', resourceId: id, status: 'success', metadata: { fromStatus, toStatus, reason: dto.reason } }));
       return org;
     });
@@ -524,8 +571,42 @@ export class GovernanceService {
   async fraudOverview() {
     const repo = this.db.getRepository(FraudCaseEntity), queue = await repo.find({ where: { status: 'open' }, order: { createdAt: 'DESC' }, take: 10 });
     const grouped = await repo.createQueryBuilder('c').select('c.severity','severity').addSelect('COUNT(*)','count').where("c.status NOT IN ('resolved','dismissed')").groupBy('c.severity').getRawMany();
+    const families = await repo.createQueryBuilder('c').select('c.category','category').addSelect('COUNT(*)','count').where("c.status NOT IN ('resolved','dismissed')").groupBy('c.category').orderBy('count','DESC').getRawMany();
     const total = await repo.count();
-    return { dateRangeLabel: 'All time', updatedLabel: 'Updated just now', kpis: [{ key:'totalAlerts',label:'Total alerts',value:String(total),trendLabel:'Persisted cases',tone:'blue',accent:'#0b66c3' }], queue: queue.map((c) => ({ id:c.id,code:c.verificationEventId ?? c.id.slice(0,16),pattern:c.category,severity:c.severity,since:age(c.createdAt),vendor:c.organizationId ?? 'Unknown' })), severityBacklog: grouped.map((r) => ({ severity:r.severity,label:r.severity,count:Number(r.count) })), totalAlerts: total, anomalyFamilies: [], collateralImpact: [], opsPerformance: [], enforcement: [] };
+    const toneFor = (category: string): 'critical' | 'high' | 'medium' | 'low' | 'neutral' => {
+      if (/clon/i.test(category)) return 'critical';
+      if (/automat/i.test(category)) return 'high';
+      if (/geo/i.test(category)) return 'medium';
+      if (/fake|suspicious/i.test(category)) return 'low';
+      return 'neutral';
+    };
+    return {
+      dateRangeLabel: 'All time',
+      updatedLabel: 'Updated just now',
+      kpis: [{ key:'totalAlerts',label:'Total alerts',value:String(total),trendLabel:'Persisted cases',tone:'blue',accent:'#0b66c3' }],
+      queue: queue.map((c) => ({ id:c.id,code:c.verificationEventId ?? c.id.slice(0,16),pattern:c.category,severity:c.severity,since:age(c.createdAt),vendor:c.organizationId ?? 'Unknown' })),
+      severityBacklog: grouped.map((r) => ({ severity:r.severity,label:r.severity,count:Number(r.count) })),
+      totalAlerts: total,
+      // Sheet2 Anomaly Detection — family breakdown for Admin Fraud Alerts.
+      anomalyFamilies: families.map((r) => ({
+        label: r.category || 'Uncategorized',
+        count: Number(r.count),
+        barTone: toneFor(String(r.category || '')),
+      })),
+      collateralImpact: [],
+      opsPerformance: [],
+      enforcement: [],
+      // Sheet2 Anomaly Processing — document instant vs background detection for Admin.
+      detectionModes: {
+        instant: ANOMALY_DETECTION_CATALOG.instant,
+        background: ANOMALY_DETECTION_CATALOG.background,
+        backgroundIntervalMinutes: Number(process.env.ANOMALY_POLL_INTERVAL_MS ?? 15 * 60_000) / 60_000,
+        workerEnabled: process.env.ANOMALY_WORKER_ENABLED !== 'false',
+      },
+    };
+  }
+  async runBackgroundAnomalyScan() {
+    return this.anomalyProcessing.runOnce();
   }
   async createFraud(u: RequestContext, dto: CreateFraudCaseDto) { const r=this.db.getRepository(FraudCaseEntity); return r.save(r.create(this.audit(u,{...dto,status:'open',signals:dto.signals??{}}))); }
   async updateFraud(u: RequestContext, id: string, dto: UpdateFraudCaseDto) { const r=this.db.getRepository(FraudCaseEntity), row=await r.findOneBy({id}); if(!row)throw new DomainError('Fraud case was not found','FRAUD_CASE_NOT_FOUND',404); Object.assign(row,dto,{updatedById:u.userId,...(dto.status==='resolved'?{resolvedAt:new Date()}: {})}); return r.save(row); }

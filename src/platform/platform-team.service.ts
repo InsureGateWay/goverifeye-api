@@ -231,7 +231,7 @@ export class PlatformTeamService {
           expiresAt: new Date(Date.now() + 7 * 86400000),
         }),
       );
-      const link = `${process.env.APP_PUBLIC_URL ?? 'http://localhost:5173'}/first-time-register?token=${encodeURIComponent(token)}`;
+      const link = `${process.env.APP_PUBLIC_URL ?? 'http://localhost:5173'}/register/invite?token=${encodeURIComponent(token)}`;
       const variables={firstName:row.firstName,role:row.role,invitationUrl:link,expiresInDays:7,resent:false};
       const content=await this.emailTemplates.render(manager,'team.invitation',variables,()=>invitationEmail(variables));
       await this.reliability.enqueue(

@@ -25,6 +25,7 @@ import { EmailTemplateService } from '../operations/email-template.service';
 import { verificationCodeEmail } from '../operations/email-templates';
 import { ScanIdentityService } from './scan-identity.service';
 import { isInternalProductName } from './internal-products';
+import { AnomalyDetectionService } from './anomaly-detection.service';
 
 export interface GeneratedCredential { verificationCode:string;displayCode:string;qrPayload:string }
 
@@ -38,6 +39,7 @@ export class CodesService {
     private readonly pricing:PricingService,
     private readonly emailTemplates:EmailTemplateService,
     private readonly scanIdentity:ScanIdentityService,
+    private readonly anomalyDetection:AnomalyDetectionService,
   ){}
 
   async exportCsv(organizationId:string,batchKey:string){
@@ -109,9 +111,36 @@ export class CodesService {
         ipHash?manager.countBy(VerificationEventEntity,{codeId:record.id,ipHash,createdAt:MoreThan(since)}):0,
         identity.scannerHash?manager.getRepository(VerificationEventEntity).createQueryBuilder('event').select('COUNT(DISTINCT event.codeId)','count').where('event.scannerHash = :scannerHash AND event.createdAt > :since',{scannerHash:identity.scannerHash,since}).getRawOne<{count:string}>():undefined,
       ]);
-      const verificationNumber=record.verificationCount+1,reasons:string[]=[];let riskScore=0;if(record.verificationCount>0)reasons.push('repeat_scan');if(verificationNumber>=5){reasons.push('repeat_scan_threshold');riskScore+=70}if(recent>=4)reasons.push('high_frequency');if(sameScanner>0)reasons.push('same_scanner_repeat');else if(sameNetwork>0)reasons.push('same_ip_user_agent_repeat');else if(sameIp>0)reasons.push('same_ip_repeat');if(Number(rapidDistinct?.count??0)>=5){reasons.push('rapid_multi_code_scanning');riskScore+=50}riskScore=Math.min(100,riskScore);
-      const outcome=riskScore>=70?'suspicious':'valid';record.verificationCount+=1;record.lastVerifiedAt=new Date();await manager.save(VerificationCodeEntity,record);product.scanned+=1;if(outcome==='suspicious')product.suspicious+=1;await manager.save(ProductEntity,product);
-      await manager.save(VerificationEventEntity,manager.create(VerificationEventEntity,{organizationId:record.organizationId,productId:record.productId,codeId:record.id,outcome,channel:context.channel??'manual',submittedCodeHash,location:context.location,customerComplaint:context.customerComplaint,ipHash,userAgentHash,scannerHash:identity.scannerHash,riskScore,riskReasons:reasons}));
+      const verificationNumber=record.verificationCount+1,reasons:string[]=[];let riskScore=0;if(record.verificationCount>0)reasons.push('repeat_scan');if(verificationNumber>=5)riskScore+=70;if(recent>=4)reasons.push('high_frequency');if(sameScanner>0)reasons.push('same_scanner_repeat');else if(sameNetwork>0)reasons.push('same_ip_user_agent_repeat');else if(sameIp>0)reasons.push('same_ip_repeat');if(Number(rapidDistinct?.count??0)>=5){reasons.push('rapid_multi_code_scanning');riskScore+=50}
+      // Sheet2 Anomaly Detection — merge instant catalog rules (geo, complaint, cloning, etc.).
+      const assessment=await this.anomalyDetection.assessScan(manager,{
+        codeId:record.id,
+        organizationId:record.organizationId,
+        productId:record.productId,
+        verificationCount:record.verificationCount,
+        location:context.location,
+        ip:context.ip,
+        customerComplaint:context.customerComplaint,
+        productScanned:product.scanned,
+        productSuspicious:product.suspicious,
+        codeHint:record.code.slice(0,8),
+      });
+      for(const reason of assessment.reasons){if(!reasons.includes(reason))reasons.push(reason)}
+      riskScore=Math.min(100,Math.max(riskScore,assessment.riskScore));
+      const outcome=(riskScore>=70||assessment.outcome==='suspicious')?'suspicious':'valid';
+      record.verificationCount+=1;record.lastVerifiedAt=new Date();await manager.save(VerificationCodeEntity,record);product.scanned+=1;if(outcome==='suspicious')product.suspicious+=1;await manager.save(ProductEntity,product);
+      const event=await manager.save(VerificationEventEntity,manager.create(VerificationEventEntity,{organizationId:record.organizationId,productId:record.productId,codeId:record.id,outcome,channel:context.channel??'manual',submittedCodeHash,location:context.location,customerComplaint:context.customerComplaint,ipHash,userAgentHash,scannerHash:identity.scannerHash,riskScore,riskReasons:reasons}));
+      await this.anomalyDetection.openAdminAlert(manager,{
+        organizationId:record.organizationId,
+        verificationEventId:event.id,
+        assessment:{
+          ...assessment,
+          outcome,
+          riskScore,
+          reasons: reasons as typeof assessment.reasons,
+        },
+        codeHint:record.code.slice(0,8),
+      });
       return{valid:true,status:'market_active',firstVerification:record.verificationCount===1,verificationCount:record.verificationCount,outcome,risk:outcome==='suspicious'?'review_recommended':'low',...this.nonce(identity),product:{id:product.id,name:product.name,description:product.description,form:product.form,manufacturer:product.manufacturer,imageUrl:product.imageUrl}};
     };
     return transactionManager ? work(transactionManager) : this.dataSource.transaction(work);
@@ -383,6 +412,34 @@ export class CodesService {
     }
   }
   async cancelBatch(organizationId:string,id:string){const repo=this.dataSource.getRepository(CodeBatchEntity),batch=batchLookup(id)?await repo.findOneBy({...batchLookup(id)!,organizationId}):null;if(!batch)throw new DomainError('Code batch was not found','BATCH_NOT_FOUND',404);if(batch.status!==BatchStatus.Generating)throw new DomainError('Only a generating batch can be cancelled','BATCH_NOT_CANCELLABLE',409);batch.status=BatchStatus.Failed;return repo.save(batch)}
+  /** Sheet2 #23 — suspend every market-active code in a batch (→ revoked). */
+  async suspendBatch(organizationId: string, actorId: string, id: string) {
+    await this.getBatch(organizationId, id);
+    const result = await this.dataSource
+      .getRepository(VerificationCodeEntity)
+      .createQueryBuilder()
+      .update(VerificationCodeEntity)
+      .set({ status: VerificationCodeStatus.Revoked })
+      .where('"organizationId" = :organizationId AND "batchId" = :id', { organizationId, id })
+      .andWhere('status = :active', { active: VerificationCodeStatus.MarketActive })
+      .execute();
+    void actorId;
+    return { batchId: id, suspendedCodes: result.affected ?? 0 };
+  }
+  /** Sheet2 #23 — reactivate revoked codes in a batch (→ market active). */
+  async reactivateBatch(organizationId: string, actorId: string, id: string) {
+    await this.getBatch(organizationId, id);
+    const result = await this.dataSource
+      .getRepository(VerificationCodeEntity)
+      .createQueryBuilder()
+      .update(VerificationCodeEntity)
+      .set({ status: VerificationCodeStatus.MarketActive })
+      .where('"organizationId" = :organizationId AND "batchId" = :id', { organizationId, id })
+      .andWhere('status = :suspended', { suspended: VerificationCodeStatus.Revoked })
+      .execute();
+    void actorId;
+    return { batchId: id, reactivatedCodes: result.affected ?? 0 };
+  }
   async setCodeStatus(organizationId:string,id:string,status:'suspended'|'active'){const repo=this.dataSource.getRepository(VerificationCodeEntity),row=await repo.findOneBy({id,organizationId});if(!row)throw new DomainError('Verification code was not found','CODE_NOT_FOUND',404);if(status==='active'&&row.status!==VerificationCodeStatus.Revoked)throw new DomainError('Only a revoked market code can be reactivated','CODE_STATE_INVALID',409);if(status==='suspended'&&row.status!==VerificationCodeStatus.MarketActive)throw new DomainError('Only a market-active code can be revoked','CODE_STATE_INVALID',409);row.status=status==='active'?VerificationCodeStatus.MarketActive:VerificationCodeStatus.Revoked;return this.safeCode(await repo.save(row))}
 
   private async allocateCodes(manager:EntityManager,organizationId:string,allocationId:string,quantity:number):Promise<GeneratedGve16Code[]>{

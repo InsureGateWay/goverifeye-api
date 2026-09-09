@@ -13,7 +13,7 @@ import { ProfileImageStorageService } from './profile-image-storage.service';
  @Patch('settings/profile') updateProfile(@CurrentUser()u:RequestContext,@Body()dto:UpdateProfileDto){return this.service.updateProfile(u.organizationId,u.userId,dto)}
  @Post('settings/profile/image-upload') profileImageUpload(@CurrentUser()u:RequestContext,@Body()dto:CreateProfileImageUploadDto){return this.profileImages.createUpload(u.organizationId,u.userId,dto.fileName)}
  @Get('settings/company') company(@CurrentUser()u:RequestContext){return this.service.company(u.organizationId)}
- @Roles(UserRole.Admin) @Patch('settings/company') updateCompany(@CurrentUser()u:RequestContext,@Body()dto:UpdateCompanyDto){return this.service.updateCompany(u.organizationId,dto)}
+ @Roles(UserRole.VendorAdmin) @Patch('settings/company') updateCompany(@CurrentUser()u:RequestContext,@Body()dto:UpdateCompanyDto){return this.service.updateCompany(u,dto)}
  @Post('settings/password/change') password(@CurrentUser()u:RequestContext,@Body()dto:ChangePasswordDto){return this.service.changePassword(u.organizationId,u.userId,dto)}
  @Post('settings/account/deactivate') deactivate(@CurrentUser()u:RequestContext){return this.service.deactivate(u.organizationId,u.userId)}
 }

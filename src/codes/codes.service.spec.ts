@@ -22,7 +22,7 @@ describe('GVE-16 verification pipeline',()=>{
       getRepository:jest.fn(()=>({createQueryBuilder:()=>({select(){return this},where(){return this},getRawOne:async()=>({count:'0'})})})),
     };
     const db={transaction:jest.fn(async(callback:(m:typeof manager)=>unknown)=>callback(manager))};
-    const service=new CodesService(db as never,generator,options as never,{} as never,{} as never,{} as never,scanIdentity as never);
+    const service=new CodesService(db as never,generator,options as never,{} as never,{} as never,{} as never,scanIdentity as never,{assessScan:async()=>({reasons:[],riskScore:0,outcome:'valid',category:'Suspicious / fake product',severity:'low',title:'',signals:{}}),openAdminAlert:async()=>undefined} as never);
     return{service,manager};
   }
 
@@ -74,7 +74,7 @@ describe('GVE-16 verification pipeline',()=>{
         [ProductEntity,{findOneBy:jest.fn(async()=>({id:code.productId,name:'Test Product',form:'Unit'}))}],
         [CodeBatchEntity,{findOneBy:jest.fn(async()=>({id:code.batchId,manufacturingDate:'2026-08-01',expiryDate:'2027-08-01'}))}],
       ]);
-      const db={getRepository:jest.fn((entity:unknown)=>repositories.get(entity))},service=new CodesService(db as never,generator,options as never,{} as never,{} as never,{} as never,scanIdentity as never);
+      const db={getRepository:jest.fn((entity:unknown)=>repositories.get(entity))},service=new CodesService(db as never,generator,options as never,{} as never,{} as never,{} as never,scanIdentity as never,{} as never);
       const details=await service.getCodeDetails(code.organizationId,code.id,{startDate:'2026-09-06',endDate:'2026-09-08'});
       expect(details).toMatchObject({verificationCount:3,suspiciousScans:2,firstVerifiedAt:events[0]!.createdAt,trendRange:{startDate:'2026-09-06',endDate:'2026-09-08'}});
       expect(details.trend.map(point=>[point.date.slice(0,10),point.scans])).toEqual([

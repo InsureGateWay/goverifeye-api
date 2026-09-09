@@ -8,6 +8,7 @@ import {
   VerificationCodeStatus,
   VerificationEventEntity,
 } from '../codes/code.entity';
+import { aggregateGeographicalActivity } from '../common/report-region';
 
 function formatDisplayDateTime(value: Date | string): string {
   const d = new Date(value);
@@ -96,7 +97,8 @@ export class PlatformReportsService {
         )
         .groupBy(`COALESCE(NULLIF(e.location, ''), 'Unknown')`)
         .orderBy('scans', 'DESC')
-        .limit(5)
+        // Sheet2 #55 — fetch raw buckets; collapse to regions below.
+        .limit(200)
         .getRawMany<{ location: string; scans: string; suspicious: string }>(),
       events.find({
         where: { outcome: 'suspicious' },
@@ -197,19 +199,21 @@ export class PlatformReportsService {
         repeat: repeatScans.length,
         suspicious: suspiciousScans,
       },
-      locations: locationRows.map((row) => {
-        const scanCount = Number(row.scans);
-        const suspiciousCount = Number(row.suspicious);
-        return {
-          state: row.location,
-          scans: scanCount,
-          suspicious: suspiciousCount,
-          percent:
-            totalScanEvents > 0
-              ? Math.round((scanCount / totalScanEvents) * 100)
-              : 0,
-        };
-      }),
+      // Sheet2 #55 Geographical Activity — region, total, suspicious, share %.
+      locations: aggregateGeographicalActivity(
+        locationRows.map((row) => ({
+          location: row.location,
+          scans: Number(row.scans),
+          suspicious: Number(row.suspicious),
+        })),
+        { limit: 8 },
+      ).map((row) => ({
+        state: row.state,
+        scans: row.scans,
+        suspicious: row.suspicious,
+        percent: row.percent,
+        scope: row.scope,
+      })),
       totalCodes: codesGenerated,
       totalScans: totalScanEvents,
       alertCount: suspiciousScans,
