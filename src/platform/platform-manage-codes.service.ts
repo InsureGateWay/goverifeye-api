@@ -99,11 +99,20 @@ export class PlatformManageCodesService {
               `SUM(CASE WHEN code.status = 'market_active' THEN 1 ELSE 0 END)`,
               'active',
             )
+            .addSelect(
+              `SUM(CASE WHEN code.status = 'suspended' THEN 1 ELSE 0 END)`,
+              'suspended',
+            )
             .where('code.batchId IN (:...ids)', {
               ids: batches.map((b) => b.id),
             })
             .groupBy('code.batchId')
-            .getRawMany<{ batchId: string; total: string; active: string }>()
+            .getRawMany<{
+              batchId: string
+              total: string
+              active: string
+              suspended: string
+            }>()
         : [],
     ]);
 
@@ -115,6 +124,7 @@ export class PlatformManageCodesService {
         {
           total: Number(row.total ?? 0),
           active: Number(row.active ?? 0),
+          suspended: Number(row.suspended ?? 0),
         },
       ]),
     );
@@ -125,7 +135,10 @@ export class PlatformManageCodesService {
       const activation = activationMap.get(batch.id);
       const total = activation?.total ?? 0;
       const active = activation?.active ?? 0;
+      const suspended = activation?.suspended ?? 0;
       const isActivated = total > 0 && active === total;
+      const isSuspended = total > 0 && suspended === total;
+      const isFailed = batch.status === 'failed';
 
       return {
         id: batch.id,
@@ -142,7 +155,13 @@ export class PlatformManageCodesService {
         totalCodes: batch.quantity,
         activeCodes: total > 0 ? active : null,
         date: formatDisplayDate(batch.createdAt),
-        status: isActivated ? 'activated' : 'generated',
+        status: isFailed
+          ? 'pending'
+          : isSuspended
+            ? 'suspended'
+            : isActivated
+              ? 'activated'
+              : 'generated',
         fulfillment: batch.fulfillment,
       };
     });
@@ -177,9 +196,18 @@ export class PlatformManageCodesService {
           `SUM(CASE WHEN code.status = 'market_active' THEN 1 ELSE 0 END)`,
           'active',
         )
+        .addSelect(
+          `SUM(CASE WHEN code.status = 'suspended' THEN 1 ELSE 0 END)`,
+          'suspended',
+        )
         .addSelect('MAX(code.activatedAt)', 'activatedOn')
         .where('code.batchId = :id', { id: batch.id })
-        .getRawOne<{ total: string; active: string; activatedOn?: string }>(),
+        .getRawOne<{
+          total: string
+          active: string
+          suspended: string
+          activatedOn?: string
+        }>(),
       this.db.getRepository(VerificationCodeEntity).findOne({
         where: { batchId: batch.id, organizationId: batch.organizationId },
         order: { createdAt: 'ASC' },
@@ -188,7 +216,17 @@ export class PlatformManageCodesService {
 
     const total = Number(activation?.total ?? 0);
     const active = Number(activation?.active ?? 0);
+    const suspended = Number(activation?.suspended ?? 0);
     const isActivated = total > 0 && active === total;
+    const isSuspended = total > 0 && suspended === total;
+    const isFailed = batch.status === 'failed';
+    const detailStatus = isFailed
+      ? 'Under Review'
+      : isSuspended
+        ? 'Suspended'
+        : isActivated
+          ? 'Activated'
+          : 'Generated';
     const generatedBy =
       [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
       user?.email ||
@@ -215,7 +253,7 @@ export class PlatformManageCodesService {
         isActivated && activation?.activatedOn
           ? formatDisplayDateTime(activation.activatedOn)
           : null,
-      status: isActivated ? 'Activated' : 'Generated',
+      status: detailStatus,
       previewCode: sampleCode?.code ?? 'SAMPLE CODE',
     };
   }
@@ -281,7 +319,12 @@ export class PlatformManageCodesService {
         const hasScans = row.verificationCount > 0;
         return {
           code: row.code,
-          status: row.status === VerificationCodeStatus.MarketActive ? 'active' : 'inactive',
+          status:
+            row.status === VerificationCodeStatus.MarketActive
+              ? 'active'
+              : row.status === VerificationCodeStatus.Suspended
+                ? 'suspended'
+                : 'inactive',
           scans: hasScans ? row.verificationCount : null,
           suspicious: hasScans
             ? Number(event?.suspiciousScans ?? 0)
@@ -371,5 +414,37 @@ export class PlatformManageCodesService {
 
   async activateBatch(_batchKey: string, _user: RequestContext, _credential?: string):Promise<never> {
     throw new DomainError('Activation requires the assigned vendor account. Release the batch, then activate through the Vendor Portal.','VENDOR_ACTIVATION_REQUIRED',403);
+  }
+
+  /** Sheet2 #23 — suspend all active codes in a platform-managed batch. */
+  async suspendBatch(batchKey: string, user: RequestContext) {
+    const batch = await this.resolveBatch(batchKey);
+    return this.db.transaction(async (manager) => {
+      const result = await manager
+        .createQueryBuilder()
+        .update(VerificationCodeEntity)
+        .set({ status: VerificationCodeStatus.Suspended })
+        .where('"batchId" = :batchId', { batchId: batch.id })
+        .andWhere('status = :status', { status: VerificationCodeStatus.Active })
+        .execute();
+      await manager.save(
+        AuditLogEntity,
+        manager.create(AuditLogEntity, {
+          organizationId: user.organizationId,
+          actorId: user.userId,
+          action: 'platform.batch.suspended',
+          resourceType: 'code_batch',
+          resourceId: batch.id,
+          status: 'success',
+          metadata: { suspendedCodes: result.affected ?? 0 },
+        }),
+      );
+      return { batchId: batch.id, suspendedCodes: result.affected ?? 0 };
+    });
+  }
+
+  /** Sheet2 #23 — deactivate = suspend remaining active codes (batch off-market). */
+  async deactivateBatch(batchKey: string, user: RequestContext) {
+    return this.suspendBatch(batchKey, user);
   }
 }

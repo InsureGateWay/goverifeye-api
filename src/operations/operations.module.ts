@@ -1,8 +1,11 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserEntity } from '../auth/auth.entity';
-import { OrganizationEntity } from '../onboarding/onboarding.entity';
-import { BackgroundJobEntity } from '../commerce/commerce.entity'; import { VerificationCodeEntity } from '../codes/code.entity'; import { ArtifactJobService } from './artifact-job.service';
+import { OrganizationDocumentEntity, OrganizationEntity } from '../onboarding/onboarding.entity';
+import { ApprovalDecisionEntity } from '../approvals/approval.entity';
+import { BackgroundJobEntity } from '../commerce/commerce.entity';
+import { VerificationCodeEntity } from '../codes/code.entity';
+import { ArtifactJobService } from './artifact-job.service';
 import { AuditLogEntity, IdempotencyRecordEntity, NotificationEntity, OutboxMessageEntity } from './operations.entity';
 import { EmailDeliveryService } from './email-delivery.service';
 import { OperationsController } from './operations.controller';
@@ -15,9 +18,37 @@ import { EmailTemplateController } from './email-template.controller';
 import { ReliabilityService } from './reliability.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([AuditLogEntity, NotificationEntity, OutboxMessageEntity, IdempotencyRecordEntity, UserEntity, OrganizationEntity,BackgroundJobEntity,VerificationCodeEntity,EmailTemplateEntity,EmailTemplateHistoryEntity])],
-  controllers: [OperationsController,EmailTemplateController],
-  providers: [OperationsService, ReliabilityService, EmailDeliveryService, EmailTemplateService,ArtifactJobService,OutboxProcessorService,ProfileImageStorageService],
-  exports: [OperationsService, ReliabilityService, EmailDeliveryService,EmailTemplateService],
+  imports: [
+    TypeOrmModule.forFeature([
+      AuditLogEntity,
+      NotificationEntity,
+      OutboxMessageEntity,
+      IdempotencyRecordEntity,
+      UserEntity,
+      OrganizationEntity,
+      OrganizationDocumentEntity,
+      ApprovalDecisionEntity,
+      BackgroundJobEntity,
+      VerificationCodeEntity,
+      EmailTemplateEntity,
+      EmailTemplateHistoryEntity,
+    ]),
+  ],
+  controllers: [OperationsController, EmailTemplateController],
+  providers: [
+    OperationsService,
+    ReliabilityService,
+    EmailDeliveryService,
+    EmailTemplateService,
+    ArtifactJobService,
+    OutboxProcessorService,
+    ProfileImageStorageService,
+  ],
+  exports: [
+    OperationsService,
+    ReliabilityService,
+    EmailDeliveryService,
+    EmailTemplateService,
+  ],
 })
 export class OperationsModule {}

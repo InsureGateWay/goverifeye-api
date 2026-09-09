@@ -36,6 +36,7 @@ describe('GovernanceService vendor deletion', () => {
       db as never, {} as never, { remove:jest.fn() } as never, {} as never,
       {} as never, {} as never, {} as never, {} as never,
       { removeVendorLogo:jest.fn(), removeProductImage:jest.fn(), removeProductDocument:jest.fn() } as never,
+      { runOnce:jest.fn() } as never,
     );
     return { service, db, manager };
   }

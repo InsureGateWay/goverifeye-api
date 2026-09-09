@@ -29,8 +29,9 @@ export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);
     const isPlatformStaffOperation=/\/platform\/(?:approvals|manage-codes|generate-code|vendors|products)(?:\/|$)/.test(request.path);
     const isPlatformDashboardRead=request.method==='GET'&&/\/platform\/dashboard(?:\/|$)/.test(request.path);
     if(user.role===UserRole.PlatformStaff&&!isPersonalPlatformAction&&!isPlatformStaffOperation&&!isPlatformDashboardRead)throw new ForbiddenException('Platform staff have access to vendor, product, and code operations only');
-    const isConfiguration=/\/platform\/(?:options|email-templates|code-pricing)(?:\/|$)/.test(request.path);
-    if(user.role===UserRole.PlatformAdmin&&request.method!=='GET'&&isConfiguration)throw new ForbiddenException('Platform administrators cannot change system configuration');
+    // Sheet2 #18: Platform admins may update code pricing; options/email templates stay SuperAdmin-only.
+    const isLockedConfiguration=/\/platform\/(?:options|email-templates)(?:\/|$)/.test(request.path);
+    if(user.role===UserRole.PlatformAdmin&&request.method!=='GET'&&isLockedConfiguration)throw new ForbiddenException('Platform administrators cannot change system configuration');
     if(!roles?.length)return true;
     if(roles.includes(user.role as UserRole))return true;
     if(roles.includes(UserRole.SuperAdmin)){

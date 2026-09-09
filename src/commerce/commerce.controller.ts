@@ -38,6 +38,11 @@ export class CommerceController {
     return this.pricing.list();
   }
 
+  /** Sheet2 #18 — authenticated vendors/admins can read live seal rates without a platform role. */
+  @Get('code-pricing') async listVendorPricing() {
+    return this.pricing.list();
+  }
+
 @Roles(UserRole.SuperAdmin) @Patch('platform/code-pricing') async updatePricing(@CurrentUser() user: RequestContext, @Body() dto: UpdateCodePricingDto) {
     return this.pricing.updatePrices({
       ...(dto.micro !== undefined ? { [LabelType.Micro]: dto.micro } : {}),

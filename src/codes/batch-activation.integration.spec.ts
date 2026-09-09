@@ -60,7 +60,7 @@ integration('batch activation against PostgreSQL',()=>{
     const runner=db.createQueryRunner();await runner.startTransaction();
     try{await new CompleteBatchActivationSpec1725700000000().up(runner);await new EnableOpenMarketInventory1726000000000().up(runner);await runner.commitTransaction();}catch(error){await runner.rollbackTransaction();throw error;}finally{await runner.release();}
     activation=new BatchActivationService(db,pinOptions);
-    codes=new CodesService(db,new CryptographicCodeGenerator(options),options,{enqueue:async()=>({})} as never,{batchCost:async()=>0} as never,{render:async(_manager:unknown,_key:string,_variables:unknown,fallback:()=>unknown)=>fallback()} as never,{consume:async()=>({}),anonymousHash:()=>undefined} as never);
+    codes=new CodesService(db,new CryptographicCodeGenerator(options),options,{enqueue:async()=>({})} as never,{batchCost:async()=>0} as never,{render:async(_manager:unknown,_key:string,_variables:unknown,fallback:()=>unknown)=>fallback()} as never,{consume:async()=>({}),anonymousHash:()=>undefined} as never,{assessScan:async()=>({reasons:[],riskScore:0,outcome:'valid',category:'Suspicious / fake product',severity:'low',title:'',signals:{}}),openAdminAlert:async()=>undefined} as never);
   });
   afterAll(async()=>{if(db?.isInitialized)await db.destroy()});
 

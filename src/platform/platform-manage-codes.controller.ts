@@ -60,4 +60,14 @@ export class PlatformManageCodesController {
   activateBatch(@CurrentUser() user: RequestContext, @Param('id') id: string, @Body() dto:ActivateBatchDto) {
     return this.service.activateBatch(id, user, dto.credential);
   }
+
+  @Post('batches/:id/suspend')
+  suspendBatch(@CurrentUser() user: RequestContext, @Param('id') id: string) {
+    return this.service.suspendBatch(id, user);
+  }
+
+  @Post('batches/:id/deactivate')
+  deactivateBatch(@CurrentUser() user: RequestContext, @Param('id') id: string) {
+    return this.service.deactivateBatch(id, user);
+  }
 }

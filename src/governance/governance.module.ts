@@ -14,9 +14,10 @@ import { GovernanceService } from './governance.service';
 import { OnboardingModule } from '../onboarding/onboarding.module';
 import { OperationsModule } from '../operations/operations.module';
 import { ProductModule } from '../products/product.module';
+import { CodesModule } from '../codes/codes.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([UserEntity,OrganizationEntity,OrganizationDocumentEntity,ProductEntity,AuditLogEntity,OrganizationChangeRequestEntity,UserMfaFactorEntity,MfaLoginChallengeEntity,VendorInvitationEntity,VendorStatusHistoryEntity,FraudCaseEntity,FraudCaseNoteEntity,AuditExceptionEntity,SystemIncidentEntity,SystemComponentEntity,ApplicationOptionEntity,ApplicationOptionHistoryEntity]), OnboardingModule, OperationsModule, ProductModule],
+  imports: [TypeOrmModule.forFeature([UserEntity,OrganizationEntity,OrganizationDocumentEntity,ProductEntity,AuditLogEntity,OrganizationChangeRequestEntity,UserMfaFactorEntity,MfaLoginChallengeEntity,VendorInvitationEntity,VendorStatusHistoryEntity,FraudCaseEntity,FraudCaseNoteEntity,AuditExceptionEntity,SystemIncidentEntity,SystemComponentEntity,ApplicationOptionEntity,ApplicationOptionHistoryEntity]), OnboardingModule, OperationsModule, ProductModule, CodesModule],
   controllers: [GovernanceController], providers: [GovernanceService], exports: [GovernanceService],
 })
 export class GovernanceModule {}

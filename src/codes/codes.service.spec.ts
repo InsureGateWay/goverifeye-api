@@ -22,7 +22,7 @@ describe('GVE-16 verification pipeline',()=>{
       getRepository:jest.fn(()=>({createQueryBuilder:()=>({select(){return this},where(){return this},getRawOne:async()=>({count:'0'})})})),
     };
     const db={transaction:jest.fn(async(callback:(m:typeof manager)=>unknown)=>callback(manager))};
-    const service=new CodesService(db as never,generator,options as never,{} as never,{} as never,{} as never,scanIdentity as never);
+    const service=new CodesService(db as never,generator,options as never,{} as never,{} as never,{} as never,scanIdentity as never,{assessScan:async()=>({reasons:[],riskScore:0,outcome:'valid',category:'Suspicious / fake product',severity:'low',title:'',signals:{}}),openAdminAlert:async()=>undefined} as never);
     return{service,manager};
   }
 

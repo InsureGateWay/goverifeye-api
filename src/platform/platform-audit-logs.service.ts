@@ -8,6 +8,10 @@ import {
   AuditQueryDto,
   AuditSummaryQueryDto,
 } from '../operations/operations.dto';
+import {
+  applyAuditListFilters,
+  mapAuditRowMetadata,
+} from '../operations/audit-query.util';
 
 @Injectable()
 export class PlatformAuditLogsService {
@@ -35,43 +39,8 @@ export class PlatformAuditLogsService {
       ])
       .addSelect(['org.companyName']);
 
-    if (q.actorId) {
-      qb.andWhere('audit.actorId = :actorId', { actorId: q.actorId });
-    }
-    if (q.actor) {
-      qb.andWhere(
-        `(LOWER(CONCAT(COALESCE(actor.firstName,''), ' ', COALESCE(actor.lastName,''))) LIKE :actor OR LOWER(COALESCE(actor.email,'')) LIKE :actor)`,
-        { actor: `%${q.actor.toLowerCase()}%` },
-      );
-    }
-    if (q.action) {
-      qb.andWhere('audit.action = :action', { action: q.action });
-    }
-    if (q.resourceType) {
-      qb.andWhere('audit.resourceType = :resourceType', {
-        resourceType: q.resourceType,
-      });
-    }
-    if (q.resourceId) {
-      qb.andWhere('audit.resourceId = :resourceId', {
-        resourceId: q.resourceId,
-      });
-    }
-    if (q.status) {
-      qb.andWhere('audit.status = :status', { status: q.status });
-    }
-    if (q.from) {
-      qb.andWhere('audit.createdAt >= :from', { from: new Date(q.from) });
-    }
-    if (q.to) {
-      qb.andWhere('audit.createdAt <= :to', { to: new Date(q.to) });
-    }
-    if (q.search) {
-      qb.andWhere(
-        `(LOWER(audit.action) LIKE :search OR LOWER(audit.resourceType) LIKE :search OR LOWER(COALESCE(audit.resourceId,'')) LIKE :search OR LOWER(actor.firstName) LIKE :search OR LOWER(actor.lastName) LIKE :search OR LOWER(actor.email) LIKE :search OR LOWER(org.companyName) LIKE :search)`,
-        { search: `%${q.search.toLowerCase()}%` },
-      );
-    }
+    // Sheet2 #58/59 — date/time, users, modules, actions, status (+ search).
+    applyAuditListFilters(qb, q, { includeOrganizationSearch: true });
 
     const sort = new Set(['createdAt', 'action', 'resourceType', 'status']).has(
       q.sortBy,
@@ -87,18 +56,20 @@ export class PlatformAuditLogsService {
       .take(q.pageSize)
       .getRawAndEntities();
 
-    const data = entities.map((row, index) => ({
-      ...row,
-      actor: {
-        firstName: raw[index]?.actor_firstName ?? '',
-        lastName: raw[index]?.actor_lastName ?? '',
-        email: raw[index]?.actor_email ?? '',
-        profileImageUrl: raw[index]?.actor_profileImageUrl ?? undefined,
-      },
-      organizationName: raw[index]?.org_companyName ?? undefined,
-      ipAddress: row.metadata?.ipAddress,
-      location: row.metadata?.location,
-    }));
+    const data = entities.map((row, index) => {
+      const meta = mapAuditRowMetadata(row);
+      return {
+        ...row,
+        actor: {
+          firstName: raw[index]?.actor_firstName ?? '',
+          lastName: raw[index]?.actor_lastName ?? '',
+          email: raw[index]?.actor_email ?? '',
+          profileImageUrl: raw[index]?.actor_profileImageUrl ?? undefined,
+        },
+        organizationName: raw[index]?.org_companyName ?? undefined,
+        ...meta,
+      };
+    });
 
     return pageOf(data, total, q.page, q.pageSize, q.sortBy, q.sortDirection);
   }
