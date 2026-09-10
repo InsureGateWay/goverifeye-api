@@ -1,4 +1,4 @@
-import { invitationEmail, passwordResetCodeEmail, platformVendorDecisionEmail, vendorOnboardingSubmittedEmail, vendorRejectedEmail, vendorVerifiedEmail, verificationCodeEmail } from './email-templates';
+import { invitationEmail, passwordResetCodeEmail, platformVendorDecisionEmail, platformVendorOnboardingSubmittedEmail, vendorOnboardingSubmittedEmail, vendorRejectedEmail, vendorVerifiedEmail, verificationCodeEmail } from './email-templates';
 
 describe('email templates', () => {
   it('renders a branded verification email with a plain-text fallback', () => {
@@ -56,6 +56,23 @@ describe('email templates', () => {
     expect(email.subject).toContain('has been verified');
     expect(email.html).toContain('administrator has verified');
     expect(email.text).toContain('vendor account is now active');
+  });
+
+  it('renders a Super Admin notification when vendor onboarding is submitted', () => {
+    const email = platformVendorOnboardingSubmittedEmail({
+      firstName: 'Super',
+      companyName: 'Example & Sons',
+      vendorContactName: 'Ada Okafor',
+      vendorEmail: 'ada@example.com',
+      industry: 'Food & Beverage',
+      country: 'Nigeria',
+      reviewUrl: 'https://app.example/admin/vendors/vendor-id',
+    });
+    expect(email.subject).toContain('submitted onboarding');
+    expect(email.text).toContain('Ada Okafor');
+    expect(email.html).toContain('Example &amp; Sons');
+    expect(email.html).toContain('Review vendor application');
+    expect(email.html).toContain('https://app.example/admin/vendors/vendor-id');
   });
 
   it('renders the rejection reason for the vendor safely', () => {

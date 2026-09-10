@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { OutboxMessageEntity } from '../operations/operations.entity';
 import { ReliabilityService } from '../operations/reliability.service';
-import { platformVendorDecisionEmail, vendorOnboardingSubmittedEmail, vendorRejectedEmail, vendorVerifiedEmail } from '../operations/email-templates';
+import { platformVendorDecisionEmail, platformVendorOnboardingSubmittedEmail, vendorOnboardingSubmittedEmail, vendorRejectedEmail, vendorVerifiedEmail } from '../operations/email-templates';
 import { OrganizationEntity } from './onboarding.entity';
 import { EmailTemplateService } from '../operations/email-template.service';
 import { RequestContext } from '../common/request-context';
@@ -14,29 +14,69 @@ export class OnboardingWelcomeService {
   constructor(private readonly reliability: ReliabilityService,private readonly emailTemplates:EmailTemplateService) {}
 
   async enqueueSubmissionOnce(manager: EntityManager, organization: OrganizationEntity) {
-    const alreadyQueued = await manager.existsBy(OutboxMessageEntity, {
+    let queued = false;
+    const vendorAlreadyQueued = await manager.existsBy(OutboxMessageEntity, {
       topic: 'email.send',
       aggregateType: 'onboarding-submitted',
       aggregateId: organization.id,
     });
-    if (alreadyQueued) return false;
 
     const appUrl = (process.env.APP_PUBLIC_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
-    const variables = {
-      firstName: organization.administrator?.firstName,
-      companyName: organization.companyName,
-      dashboardUrl: `${appUrl}/dashboard`,
-      termsUrl: process.env.TERMS_AND_CONDITIONS_URL ?? `${appUrl}/terms-and-conditions`,
-      userGuideUrl: process.env.USER_GUIDE_URL ?? `${appUrl}/user-guide`,
-      dataUsePolicyUrl: process.env.DATA_USE_POLICY_URL ?? `${appUrl}/data-use-policy`,
-    };
-    const email = await this.emailTemplates.render(manager,'vendor.onboarding_submitted',variables,()=>vendorOnboardingSubmittedEmail(variables));
+    if (!vendorAlreadyQueued) {
+      const variables = {
+        firstName: organization.administrator?.firstName,
+        companyName: organization.companyName,
+        dashboardUrl: `${appUrl}/dashboard`,
+        termsUrl: process.env.TERMS_AND_CONDITIONS_URL ?? `${appUrl}/terms-and-conditions`,
+        userGuideUrl: process.env.USER_GUIDE_URL ?? `${appUrl}/user-guide`,
+        dataUsePolicyUrl: process.env.DATA_USE_POLICY_URL ?? `${appUrl}/data-use-policy`,
+      };
+      const email = await this.emailTemplates.render(manager,'vendor.onboarding_submitted',variables,()=>vendorOnboardingSubmittedEmail(variables));
+      await this.reliability.enqueue(manager, 'email.send', 'onboarding-submitted', organization.id, {
+        to: organization.administrator.email,
+        ...email,
+      });
+      queued = true;
+    }
 
-    await this.reliability.enqueue(manager, 'email.send', 'onboarding-submitted', organization.id, {
-      to: organization.administrator.email,
-      ...email,
+    const recipients = await manager.find(UserEntity, {
+      where: { role: UserRole.SuperAdmin, isActive: true },
+      order: { createdAt: 'ASC' },
     });
-    return true;
+    const vendorContactName = [organization.administrator?.firstName, organization.administrator?.lastName]
+      .filter(Boolean)
+      .join(' ') || organization.administrator?.email || 'Vendor administrator';
+    for (const recipient of recipients) {
+      const aggregateType = 'platform-onboarding-submitted';
+      const aggregateId = `${organization.id}:${recipient.id}`;
+      const alreadyQueued = await manager.existsBy(OutboxMessageEntity, {
+        topic: 'email.send',
+        aggregateType,
+        aggregateId,
+      });
+      if (alreadyQueued) continue;
+      const variables = {
+        firstName: recipient.firstName,
+        companyName: organization.companyName,
+        vendorContactName,
+        vendorEmail: organization.administrator?.email || 'Not available',
+        industry: organization.industry || 'Not provided',
+        country: organization.country || organization.address?.country || 'Not provided',
+        reviewUrl: `${appUrl}/admin/vendors/${organization.id}`,
+      };
+      const email = await this.emailTemplates.render(
+        manager,
+        'platform.vendor_onboarding_submitted',
+        variables,
+        () => platformVendorOnboardingSubmittedEmail(variables),
+      );
+      await this.reliability.enqueue(manager, 'email.send', aggregateType, aggregateId, {
+        to: recipient.email,
+        ...email,
+      });
+      queued = true;
+    }
+    return queued;
   }
 
   async enqueueVerifiedOnce(manager: EntityManager, organization: OrganizationEntity, eventId = organization.id) {

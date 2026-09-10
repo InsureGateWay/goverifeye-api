@@ -269,6 +269,47 @@ Data Use Policy: ${input.dataUsePolicyUrl}`,
   };
 }
 
+export function platformVendorOnboardingSubmittedEmail(input: {
+  firstName?: string;
+  companyName: string;
+  vendorContactName: string;
+  vendorEmail: string;
+  industry: string;
+  country: string;
+  reviewUrl: string;
+}): EmailContent {
+  const name = displayName(input.firstName);
+  const greeting = name ? `Hi ${name},` : 'Hello,';
+  return {
+    subject: `${input.companyName} submitted onboarding for review`,
+    text: `${greeting}
+
+${input.companyName} has completed vendor onboarding and is ready for review.
+
+Submitted by: ${input.vendorContactName}
+Email: ${input.vendorEmail}
+Industry: ${input.industry}
+Country: ${input.country}
+
+Review the vendor application: ${input.reviewUrl}`,
+    html: layout({
+      preheader: `${input.companyName} completed onboarding and is ready for review.`,
+      eyebrow: 'Vendor onboarding',
+      heading: 'A vendor application is ready for review',
+      body: `<p style="margin:0 0 14px;font-size:16px;font-weight:600;color:${TEXT_PRIMARY}">${escapeHtml(greeting)}</p>
+<p style="margin:0 0 20px"><strong>${escapeHtml(input.companyName)}</strong> has completed vendor onboarding and is ready for administrator review.</p>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${SURFACE_SOFT};border:1px solid ${CARD_BORDER};border-radius:12px">
+  <tr><td style="padding:14px 16px 6px;color:${TEXT_MUTED};font-size:12px">Submitted by</td><td style="padding:14px 16px 6px;color:${TEXT_PRIMARY};font-size:13px;font-weight:600">${escapeHtml(input.vendorContactName)}</td></tr>
+  <tr><td style="padding:6px 16px;color:${TEXT_MUTED};font-size:12px">Email</td><td style="padding:6px 16px;color:${TEXT_PRIMARY};font-size:13px">${escapeHtml(input.vendorEmail)}</td></tr>
+  <tr><td style="padding:6px 16px;color:${TEXT_MUTED};font-size:12px">Industry</td><td style="padding:6px 16px;color:${TEXT_PRIMARY};font-size:13px">${escapeHtml(input.industry)}</td></tr>
+  <tr><td style="padding:6px 16px 14px;color:${TEXT_MUTED};font-size:12px">Country</td><td style="padding:6px 16px 14px;color:${TEXT_PRIMARY};font-size:13px">${escapeHtml(input.country)}</td></tr>
+</table>`,
+      action: { label: 'Review vendor application', url: input.reviewUrl },
+      notice: 'Review the submitted company details and compliance documents before approving or rejecting the vendor.',
+    }),
+  };
+}
+
 export function vendorVerifiedEmail(input: {
   firstName?: string;
   companyName: string;

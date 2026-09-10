@@ -19,6 +19,48 @@ describe('OnboardingWelcomeService decision notifications', () => {
     return { service, enqueue, render, manager };
   }
 
+  it('emails the vendor and every active Super Admin when onboarding is completed', async () => {
+    const { service, enqueue, render, manager } = setup([
+      { id: 'super-1', email: 'one@example.com', firstName: 'One' },
+      { id: 'super-2', email: 'two@example.com', firstName: 'Two' },
+    ]);
+    await service.enqueueSubmissionOnce(manager as never, {
+      id: 'vendor-id',
+      companyName: 'Example Vendor',
+      industry: 'Food & Beverage',
+      country: 'Nigeria',
+      administrator: { firstName: 'Ada', lastName: 'Okafor', email: 'vendor@example.com' },
+    } as never);
+
+    expect(render).toHaveBeenCalledWith(expect.anything(), 'vendor.onboarding_submitted', expect.anything(), expect.any(Function));
+    expect(render).toHaveBeenCalledWith(expect.anything(), 'platform.vendor_onboarding_submitted', expect.objectContaining({ companyName: 'Example Vendor', vendorContactName: 'Ada Okafor' }), expect.any(Function));
+    expect(enqueue).toHaveBeenCalledTimes(3);
+    expect(enqueue).toHaveBeenCalledWith(expect.anything(), 'email.send', 'onboarding-submitted', 'vendor-id', expect.objectContaining({ to: 'vendor@example.com' }));
+    expect(enqueue).toHaveBeenCalledWith(expect.anything(), 'email.send', 'platform-onboarding-submitted', 'vendor-id:super-1', expect.objectContaining({ to: 'one@example.com' }));
+    expect(enqueue).toHaveBeenCalledWith(expect.anything(), 'email.send', 'platform-onboarding-submitted', 'vendor-id:super-2', expect.objectContaining({ to: 'two@example.com' }));
+  });
+
+  it('does not duplicate vendor or Super Admin onboarding emails', async () => {
+    const { service, enqueue, manager } = setup();
+    manager.existsBy.mockResolvedValue(true);
+    expect(await service.enqueueSubmissionOnce(manager as never, organization)).toBe(false);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('still alerts Super Admin when the vendor confirmation was already queued', async () => {
+    const { service, enqueue, manager } = setup();
+    manager.existsBy.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    expect(await service.enqueueSubmissionOnce(manager as never, organization)).toBe(true);
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(enqueue).toHaveBeenCalledWith(
+      expect.anything(),
+      'email.send',
+      'platform-onboarding-submitted',
+      'vendor-id:super-id',
+      expect.objectContaining({ to: 'super@example.com' }),
+    );
+  });
+
   it('emails the vendor and every active Super Admin when a delegate approves', async () => {
     const { service, enqueue, render, manager } = setup([
       { id: 'super-1', email: 'one@example.com', firstName: 'One' },
