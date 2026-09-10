@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common'; import { DataSource, ILike } from 'typeorm'; import * as argon2 from 'argon2';
 import { pageOf } from '../common/api-response'; import { toOrder } from '../common/page-query.dto'; import { DomainError } from '../common/domain-error'; import { RequestContext } from '../common/request-context'; import { UserEntity } from '../auth/auth.entity'; import { UserRole } from '../auth/authorization'; import { OrganizationDocumentEntity, OrganizationEntity } from '../onboarding/onboarding.entity';
 import { ApprovalDecisionEntity } from '../approvals/approval.entity';
-import { AuditLogEntity, NotificationEntity } from './operations.entity'; import { AuditQueryDto, AuditSummaryQueryDto, ChangePasswordDto, NotificationQueryDto, UpdateCompanyDto, UpdateProfileDto } from './operations.dto'; import { applyAuditListFilters, auditDateBoundary, mapAuditRowMetadata } from './audit-query.util';
+import { AuditLogEntity, NotificationEntity } from './operations.entity'; import { AuditQueryDto, AuditSummaryQueryDto, ChangePasswordDto, NotificationQueryDto, UpdateCompanyDto, UpdateProfileDto } from './operations.dto'; import { applyAuditListFilters, auditDateBoundary, mapVendorAuditRowMetadata } from './audit-query.util';
 @Injectable() export class OperationsService {
   constructor(private readonly db:DataSource) {}
   async audit(organizationId:string, actorId:string, action:string, resourceType:string, resourceId?:string, metadata?:Record<string,unknown>) { return this.db.getRepository(AuditLogEntity).save({ organizationId,actorId,action,resourceType,resourceId,metadata,status:'success' }); }
@@ -12,8 +12,8 @@ import { AuditLogEntity, NotificationEntity } from './operations.entity'; import
     const sort=new Set(['createdAt','action','resourceType','status']).has(q.sortBy)?q.sortBy:'createdAt';qb.orderBy(`audit.${sort}`,q.sortDirection.toUpperCase()as'ASC'|'DESC').addOrderBy('audit.id',q.sortDirection.toUpperCase()as'ASC'|'DESC');
     const total=await qb.clone().getCount(),{entities,raw}=await qb.skip((q.page-1)*q.pageSize).take(q.pageSize).getRawAndEntities();
     const data=entities.map((row,index)=>{
-      const meta=mapAuditRowMetadata(row);
-      return {...row,actor:{firstName:raw[index]?.actor_firstName??'',lastName:raw[index]?.actor_lastName??'',email:raw[index]?.actor_email??'',profileImageUrl:raw[index]?.actor_profileImageUrl??undefined},...meta};
+      const meta=mapVendorAuditRowMetadata(row);
+      return {id:row.id,createdAt:row.createdAt,action:row.action,resourceType:row.resourceType,resourceId:row.resourceId,status:row.status,actor:{firstName:raw[index]?.actor_firstName??'',lastName:raw[index]?.actor_lastName??'',email:raw[index]?.actor_email??'',profileImageUrl:raw[index]?.actor_profileImageUrl??undefined},...meta};
     });
     return{...pageOf(data,total,q.page,q.pageSize,q.sortBy,q.sortDirection),data};
   }

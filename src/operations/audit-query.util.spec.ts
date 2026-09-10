@@ -2,6 +2,7 @@ import {
   applyAuditListFilters,
   auditDateBoundary,
   mapAuditRowMetadata,
+  mapVendorAuditRowMetadata,
 } from './audit-query.util';
 
 describe('audit-query.util (Sheet2 #58/59)', () => {
@@ -46,5 +47,32 @@ describe('audit-query.util (Sheet2 #58/59)', () => {
     expect(
       auditDateBoundary('2026-09-10T14:30:00.000Z', 'to').toISOString(),
     ).toBe('2026-09-10T14:30:00.000Z');
+  });
+
+  it('removes technical metadata from vendor audit rows', () => {
+    const mapped = mapVendorAuditRowMetadata({
+      metadata: {
+        details: 'POST /api/v1/settings/change-requests',
+        sessionId: 'session-1',
+        deviceFingerprint: 'fingerprint-1',
+        userAgent: 'test-browser',
+        ipAddress: '1.2.3.4',
+        productName: 'Laptop',
+        reference: 'CR-12345678',
+        authority: 'Vendor Admin',
+      },
+    } as any);
+
+    expect(mapped).toEqual({
+      authority: 'Vendor Admin',
+      details: undefined,
+      metadata: {
+        productName: 'Laptop',
+        reference: 'CR-12345678',
+      },
+    });
+    expect(mapped).not.toHaveProperty('sessionId');
+    expect(mapped).not.toHaveProperty('ipAddress');
+    expect(mapped.metadata).not.toHaveProperty('deviceFingerprint');
   });
 });

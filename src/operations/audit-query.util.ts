@@ -149,3 +149,26 @@ export function mapAuditRowMetadata(row: AuditLogEntity) {
     metadata,
   };
 }
+
+/** Business-facing audit metadata. Technical request and session context is
+ * reserved for the platform audit API. */
+export function mapVendorAuditRowMetadata(row: AuditLogEntity) {
+  const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+  const rawDetails =
+    typeof metadata.details === 'string' ? metadata.details : undefined;
+  const details =
+    rawDetails &&
+    !/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+\//i.test(rawDetails)
+      ? rawDetails
+      : undefined;
+  const businessMetadata: Record<string, unknown> = {};
+  for (const key of ['productName', 'batchRef', 'category', 'reference']) {
+    if (typeof metadata[key] === 'string') businessMetadata[key] = metadata[key];
+  }
+  return {
+    authority:
+      typeof metadata.authority === 'string' ? metadata.authority : undefined,
+    details,
+    metadata: businessMetadata,
+  };
+}
