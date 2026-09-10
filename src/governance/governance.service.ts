@@ -110,15 +110,33 @@ export class GovernanceService {
         403,
       );
     }
-    const repo = this.db.getRepository(OrganizationChangeRequestEntity);
-    const row = repo.create(this.audit(u, {
-      organizationId: u.organizationId,
-      category: dto.category.trim(),
-      details: dto.details.trim(),
-      requestedChanges: dto.requestedChanges ?? {},
-    }));
-    const saved = await repo.save(row);
-    return { id: saved.id, reference: `CR-${saved.id.slice(0, 8).toUpperCase()}`, status: saved.status, message: 'Your change request has been submitted.' };
+    return this.db.transaction(async (manager) => {
+      const repo = manager.getRepository(OrganizationChangeRequestEntity);
+      const row = repo.create(this.audit(u, {
+        organizationId: u.organizationId,
+        category: dto.category.trim(),
+        details: dto.details.trim(),
+        requestedChanges: dto.requestedChanges ?? {},
+      }));
+      const saved = await repo.save(row);
+      const reference = `CR-${saved.id.slice(0, 8).toUpperCase()}`;
+      const auditRepo = manager.getRepository(AuditLogEntity);
+      await auditRepo.save(auditRepo.create({
+        organizationId: u.organizationId,
+        actorId: u.userId,
+        action: 'organization.change_request.submitted',
+        resourceType: 'organization_change_request',
+        resourceId: saved.id,
+        status: 'success',
+        metadata: {
+          category: saved.category,
+          reference,
+          details: `Submitted ${saved.category} change request`,
+          sessionId: u.sessionId,
+        },
+      }));
+      return { id: saved.id, reference, status: saved.status, message: 'Your change request has been submitted.' };
+    });
   }
 
   async profileHistory(organizationId: string) {
