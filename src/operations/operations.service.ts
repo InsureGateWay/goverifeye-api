@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common'; import { DataSource, ILike } from 'typeorm'; import * as argon2 from 'argon2';
 import { pageOf } from '../common/api-response'; import { toOrder } from '../common/page-query.dto'; import { DomainError } from '../common/domain-error'; import { RequestContext } from '../common/request-context'; import { UserEntity } from '../auth/auth.entity'; import { UserRole } from '../auth/authorization'; import { OrganizationDocumentEntity, OrganizationEntity } from '../onboarding/onboarding.entity';
 import { ApprovalDecisionEntity } from '../approvals/approval.entity';
-import { AuditLogEntity, NotificationEntity } from './operations.entity'; import { AuditQueryDto, AuditSummaryQueryDto, ChangePasswordDto, NotificationQueryDto, UpdateCompanyDto, UpdateProfileDto } from './operations.dto'; import { applyAuditListFilters, mapAuditRowMetadata } from './audit-query.util';
+import { AuditLogEntity, NotificationEntity } from './operations.entity'; import { AuditQueryDto, AuditSummaryQueryDto, ChangePasswordDto, NotificationQueryDto, UpdateCompanyDto, UpdateProfileDto } from './operations.dto'; import { applyAuditListFilters, auditDateBoundary, mapAuditRowMetadata } from './audit-query.util';
 @Injectable() export class OperationsService {
   constructor(private readonly db:DataSource) {}
   async audit(organizationId:string, actorId:string, action:string, resourceType:string, resourceId?:string, metadata?:Record<string,unknown>) { return this.db.getRepository(AuditLogEntity).save({ organizationId,actorId,action,resourceType,resourceId,metadata,status:'success' }); }
@@ -18,7 +18,7 @@ import { AuditLogEntity, NotificationEntity } from './operations.entity'; import
     return{...pageOf(data,total,q.page,q.pageSize,q.sortBy,q.sortDirection),data};
   }
   async auditSummary(organizationId:string,q:AuditSummaryQueryDto){
-    const now=q.to?new Date(q.to):new Date(),defaultDays=q.range==='monthly'?365:q.range==='weekly'?56:30,from=q.from?new Date(q.from):new Date(now.getTime()-defaultDays*86400000);
+    const now=q.to?auditDateBoundary(q.to,'to'):new Date(),defaultDays=q.range==='monthly'?365:q.range==='weekly'?56:30,from=q.from?auditDateBoundary(q.from,'from'):new Date(now.getTime()-defaultDays*86400000);
     const rows=await this.db.getRepository(AuditLogEntity).createQueryBuilder('audit').select(['audit.createdAt','audit.actorId','audit.action','audit.resourceType','audit.status']).where('audit.organizationId = :organizationId',{organizationId}).andWhere('audit.createdAt BETWEEN :from AND :to',{from,to:now}).getMany();
     const totalActivities=await this.db.getRepository(AuditLogEntity).countBy({organizationId}),actorCounts=new Map<string,number>();for(const row of rows)actorCounts.set(row.actorId,(actorCounts.get(row.actorId)??0)+1);
     const mostId=[...actorCounts.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0],most=mostId?await this.db.getRepository(UserEntity).findOneBy({id:mostId,organizationId}):null;

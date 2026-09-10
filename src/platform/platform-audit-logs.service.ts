@@ -10,6 +10,7 @@ import {
 } from '../operations/operations.dto';
 import {
   applyAuditListFilters,
+  auditDateBoundary,
   mapAuditRowMetadata,
 } from '../operations/audit-query.util';
 
@@ -75,11 +76,11 @@ export class PlatformAuditLogsService {
   }
 
   async summary(q: AuditSummaryQueryDto) {
-    const now = q.to ? new Date(q.to) : new Date();
+    const now = q.to ? auditDateBoundary(q.to, 'to') : new Date();
     const defaultDays =
       q.range === 'monthly' ? 365 : q.range === 'weekly' ? 56 : 30;
     const from = q.from
-      ? new Date(q.from)
+      ? auditDateBoundary(q.from, 'from')
       : new Date(now.getTime() - defaultDays * 86400000);
 
     const repo = this.db.getRepository(AuditLogEntity);

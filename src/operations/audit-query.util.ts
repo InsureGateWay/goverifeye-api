@@ -17,6 +17,22 @@ const MODULE_RESOURCE_HINTS: Record<string, string[]> = {
 };
 
 /**
+ * Date-only audit filters represent calendar days in the portal. Expand the
+ * upper boundary to the end of that day; `new Date('YYYY-MM-DD')` otherwise
+ * resolves to midnight and hides every event recorded later that day.
+ */
+export function auditDateBoundary(
+  value: string,
+  boundary: 'from' | 'to',
+): Date {
+  const date = new Date(value);
+  if (boundary === 'to' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    date.setUTCHours(23, 59, 59, 999);
+  }
+  return date;
+}
+
+/**
  * Apply agreed Audit Log filters: date/time, actor, module, action, status, search.
  */
 export function applyAuditListFilters(
@@ -80,11 +96,15 @@ export function applyAuditListFilters(
   }
 
   if (q.from) {
-    qb.andWhere('audit.createdAt >= :from', { from: new Date(q.from) });
+    qb.andWhere('audit.createdAt >= :from', {
+      from: auditDateBoundary(q.from, 'from'),
+    });
   }
 
   if (q.to) {
-    qb.andWhere('audit.createdAt <= :to', { to: new Date(q.to) });
+    qb.andWhere('audit.createdAt <= :to', {
+      to: auditDateBoundary(q.to, 'to'),
+    });
   }
 
   if (q.search?.trim()) {

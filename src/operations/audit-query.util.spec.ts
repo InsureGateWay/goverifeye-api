@@ -1,4 +1,8 @@
-import { applyAuditListFilters, mapAuditRowMetadata } from './audit-query.util';
+import {
+  applyAuditListFilters,
+  auditDateBoundary,
+  mapAuditRowMetadata,
+} from './audit-query.util';
 
 describe('audit-query.util (Sheet2 #58/59)', () => {
   it('exposes metadata fields needed for audit detail', () => {
@@ -27,5 +31,20 @@ describe('audit-query.util (Sheet2 #58/59)', () => {
 
   it('exports applyAuditListFilters helper', () => {
     expect(typeof applyAuditListFilters).toBe('function');
+  });
+
+  it('includes the full selected end date in audit queries', () => {
+    expect(auditDateBoundary('2026-09-10', 'to').toISOString()).toBe(
+      '2026-09-10T23:59:59.999Z',
+    );
+    expect(auditDateBoundary('2026-09-10', 'from').toISOString()).toBe(
+      '2026-09-10T00:00:00.000Z',
+    );
+  });
+
+  it('preserves precise timestamp boundaries', () => {
+    expect(
+      auditDateBoundary('2026-09-10T14:30:00.000Z', 'to').toISOString(),
+    ).toBe('2026-09-10T14:30:00.000Z');
   });
 });
