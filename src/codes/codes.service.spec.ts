@@ -42,6 +42,17 @@ describe('GVE-16 verification pipeline',()=>{
     await expect(harness(record,BatchStatus.Allocated).service.verify(record.code)).resolves.toMatchObject({valid:false,status:'unactivated'});
   });
 
+  it('blocks vendor export until the batch is market active',async()=>{
+    const batchId='11111111-1111-4111-8111-111111111111';
+    const batchRepository={find:jest.fn(async()=>[{id:batchId,status:BatchStatus.Allocated}])};
+    const codeRepository={find:jest.fn()};
+    const dataSource={getRepository:jest.fn((entity:unknown)=>entity===CodeBatchEntity?batchRepository:codeRepository)};
+    const service=Object.create(CodesService.prototype) as CodesService;
+    Object.assign(service,{dataSource});
+    await expect(service.exportCsv('33333333-3333-4333-8333-333333333333',batchId)).rejects.toMatchObject({code:'BATCH_NOT_MARKET_ACTIVE',status:409});
+    expect(codeRepository.find).not.toHaveBeenCalled();
+  });
+
   it('returns a live verdict only after tag, lifecycle, and binding checks',async()=>{
     const record=activeRecord(),result=await harness(record).service.verify(record.code,{channel:'qr'});
     expect(result).toMatchObject({valid:true,status:'market_active',firstVerification:true,outcome:'valid',product:{name:'Test Product'}});

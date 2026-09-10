@@ -7,13 +7,22 @@ import { CodeQueryDto } from '../codes/code.dto';
 import { PlatformManageCodesService } from './platform-manage-codes.service';
 import { CurrentUser, RequestContext } from '../common/request-context';
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, Matches } from 'class-validator';
+import { Equals, IsString, Matches } from 'class-validator';
 
 class ActivateBatchDto {
   @ApiProperty({example:'12345678',description:'One-time batch/allocation activation credential.'})
   @IsString()
   @Matches(/^\d{6,16}$/)
   credential!:string;
+}
+
+class ReleaseBatchDto {
+  @ApiProperty({
+    example: true,
+    description: 'Confirms that printing and dispatch controls are complete.',
+  })
+  @Equals(true)
+  confirmDispatched!: boolean;
 }
 
 @ApiTags('platform-manage-codes')
@@ -54,7 +63,14 @@ export class PlatformManageCodesController {
   }
 
   @Post('batches/:id/release')
-  releaseBatch(@CurrentUser() user:RequestContext,@Param('id')id:string){return this.activation.release(id,user)}
+  releaseBatch(
+    @CurrentUser() user: RequestContext,
+    @Param('id') id: string,
+    @Body() dto: ReleaseBatchDto,
+  ) {
+    void dto;
+    return this.activation.release(id, user);
+  }
 
   @Post('batches/:id/activate')
   activateBatch(@CurrentUser() user: RequestContext, @Param('id') id: string, @Body() dto:ActivateBatchDto) {

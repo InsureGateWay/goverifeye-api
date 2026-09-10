@@ -44,8 +44,11 @@ export class CodesService {
 
   async exportCsv(organizationId:string,batchKey:string){
     const batchRepo=this.dataSource.getRepository(CodeBatchEntity),codeRepo=this.dataSource.getRepository(VerificationCodeEntity);
-    const batches=batchKey==='all'?await batchRepo.find({where:{organizationId},order:{createdAt:'DESC'}}):(batchLookup(batchKey)?await batchRepo.find({where:{...batchLookup(batchKey)!,organizationId}}):[]);
+    const batches=batchKey==='all'
+      ?await batchRepo.find({where:{organizationId,status:BatchStatus.MarketActive},order:{createdAt:'DESC'}})
+      :(batchLookup(batchKey)?await batchRepo.find({where:{...batchLookup(batchKey)!,organizationId}}):[]);
     if(!batches.length&&batchKey!=='all')throw new DomainError('Batch was not found','BATCH_NOT_FOUND',404);
+    if(batchKey!=='all'&&batches[0]!.status!==BatchStatus.MarketActive)throw new DomainError('Activate this batch before downloading or printing its codes','BATCH_NOT_MARKET_ACTIVE',409);
     const ids=batches.map(row=>row.id),rows=ids.length?await codeRepo.find({where:{organizationId,batchId:In(ids)},order:{batchId:'ASC',code:'ASC'}}):[];
     const esc=(value:unknown)=>`"${String(value??'').replace(/"/g,'""')}"`;
     return{csv:['batchId,code,status,verificationCount,activatedAt,lastVerifiedAt',...rows.map(row=>[row.batchId,row.code,row.status,row.verificationCount,row.activatedAt,row.lastVerifiedAt].map(esc).join(','))].join('\n'),filename:batchKey==='all'?'all-code-batches.csv':`code-batch-${batchKey}.csv`};
