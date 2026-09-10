@@ -103,7 +103,9 @@ describe('shopper isolation and verification retries', () => {
     expect(result.shopper).toEqual({ id: 'shopper-id', email: 'shopper@example.com', displayName: 'Ada Shopper' });
     expect(challenge.actionCompletedAt).toBeInstanceOf(Date);
     expect(challenge.actionTokenHash).toBeNull();
-    expect(manager.save).toHaveBeenCalledWith(ShopperSessionEntity, expect.objectContaining({ shopperId: 'shopper-id' }));
+    expect(manager.save).toHaveBeenCalledWith(ShopperSessionEntity, expect.objectContaining({ shopperId: 'shopper-id', expiresAt: expect.any(Date) }));
+    const sessionWrite = manager.save.mock.calls.find(([type]) => type === ShopperSessionEntity)?.[1];
+    expect(sessionWrite.expiresAt.toISOString()).toBe('9999-12-31T23:59:59.999Z');
   });
   it('replaces the password and revokes existing sessions after password-reset OTP verification', async () => {
     const challenge: any = { email: 'shopper@example.com', purpose: 'password_reset', consumed: true, actionCompletedAt: null, actionTokenHash: 'hash', actionExpiresAt: new Date(Date.now() + 60000) };

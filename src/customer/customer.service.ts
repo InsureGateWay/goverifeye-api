@@ -9,6 +9,8 @@ import { verificationCodeEmail } from '../operations/email-templates';
 import { CustomerCheckEntity, CustomerConcernEntity, ShopperChallengeEntity, ShopperEntity, ShopperSessionEntity } from './customer.entity';
 import type { ConcernReceiptDto, ConcernRequestDto, CustomerCheckDto, CustomerCheckRequestDto, CustomerHistoryDto, ShopperChallengeDto, ShopperDto, ShopperRegistrationVerifiedDto, ShopperSessionDto } from './customer.contract';
 
+const persistentShopperSessionExpiry = () => new Date('9999-12-31T23:59:59.999Z');
+
 @Injectable()
 export class CustomerService {
   constructor(private readonly db: DataSource, private readonly codes: CodesService, private readonly reliability: ReliabilityService) {}
@@ -18,7 +20,7 @@ export class CustomerService {
     return { id: shopper.id, email: shopper.email, ...(shopper.displayName ? { displayName: shopper.displayName } : {}) };
   }
   private async issueSession(manager: EntityManager, shopper: ShopperEntity): Promise<ShopperSessionDto> {
-    const accessToken = randomBytes(32).toString('hex'), expiresAt = new Date(Date.now() + 30 * 86400000);
+    const accessToken = randomBytes(32).toString('hex'), expiresAt = persistentShopperSessionExpiry();
     await manager.save(ShopperSessionEntity, manager.create(ShopperSessionEntity, { shopperId: shopper.id, tokenHash: this.hash(accessToken), expiresAt }));
     return { accessToken, expiresAt: expiresAt.toISOString(), shopper: this.shopperDto(shopper) };
   }
