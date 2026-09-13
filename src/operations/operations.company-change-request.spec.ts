@@ -25,7 +25,7 @@ describe('OperationsService protected company fields', () => {
       save: jest.fn(async (value) => value),
     };
     const db = { getRepository: jest.fn(() => repo) };
-    return { service: new OperationsService(db as never), repo };
+    return { service: new OperationsService(db as never, {} as never), repo };
   }
 
   const user = { organizationId: 'org-1', userId: 'user-1', role: UserRole.VendorAdmin, sessionId: 'session-1' };

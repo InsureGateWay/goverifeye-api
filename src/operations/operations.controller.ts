@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common'; import { ApiBearerAuth, ApiTags } from '@nestjs/swagger'; import { CurrentUser, RequestContext } from '../common/request-context'; import { Roles, UserRole } from '../auth/authorization';
-import { AuditQueryDto, AuditSummaryQueryDto, ChangePasswordDto, CreateProfileImageUploadDto, NotificationQueryDto, UpdateCompanyDto, UpdateProfileDto } from './operations.dto'; import { OperationsService } from './operations.service';
+import { AuditQueryDto, AuditSummaryQueryDto, ChangePasswordDto, ContactSupportDto, CreateProfileImageUploadDto, NotificationQueryDto, UpdateCompanyDto, UpdateProfileDto } from './operations.dto'; import { OperationsService } from './operations.service';
 import { ProfileImageStorageService } from './profile-image-storage.service';
 @ApiBearerAuth() @ApiTags('operations') @Controller() export class OperationsController { constructor(private readonly service:OperationsService,private readonly profileImages:ProfileImageStorageService){}
  @Roles(UserRole.Admin) @Get('audit-logs') audit(@CurrentUser()u:RequestContext,@Query()q:AuditQueryDto){return this.service.listAudit(u.organizationId,q)}
@@ -15,5 +15,6 @@ import { ProfileImageStorageService } from './profile-image-storage.service';
  @Get('settings/company') company(@CurrentUser()u:RequestContext){return this.service.company(u.organizationId)}
  @Roles(UserRole.VendorAdmin) @Patch('settings/company') updateCompany(@CurrentUser()u:RequestContext,@Body()dto:UpdateCompanyDto){return this.service.updateCompany(u,dto)}
  @Post('settings/password/change') password(@CurrentUser()u:RequestContext,@Body()dto:ChangePasswordDto){return this.service.changePassword(u.organizationId,u.userId,dto)}
+ @Post('settings/support') contactSupport(@CurrentUser()u:RequestContext,@Body()dto:ContactSupportDto){return this.service.contactSupport(u,dto)}
  @Post('settings/account/deactivate') deactivate(@CurrentUser()u:RequestContext){return this.service.deactivate(u.organizationId,u.userId)}
 }

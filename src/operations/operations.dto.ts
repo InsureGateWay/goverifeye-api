@@ -1,4 +1,4 @@
-import { IsBoolean, IsDateString, IsEmail, IsIn, IsInt, IsOptional, IsString, IsUrl, Length, Max, MaxLength, Min } from 'class-validator'; import { PageQueryDto } from '../common/page-query.dto'; import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsDateString, IsEmail, IsIn, IsInt, IsOptional, IsString, IsUrl, IsUUID, Length, Matches, Max, MaxLength, Min } from 'class-validator'; import { PageQueryDto } from '../common/page-query.dto'; import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AddressDto } from '../onboarding/onboarding.dto';
 import { ValidateNested } from 'class-validator';
@@ -21,3 +21,11 @@ export class UpdateProfileDto { @ApiProperty({example:'Ada'}) @IsString() @Lengt
 export class CreateProfileImageUploadDto { @ApiProperty({example:'profile.jpg'}) @IsString() @Length(1,200) fileName!:string; @ApiProperty({enum:['image/png','image/jpeg']}) @IsIn(['image/png','image/jpeg']) mimeType!:string; @ApiProperty({maximum:2097152}) @Type(()=>Number) @IsInt() @Min(1) @Max(2*1024*1024) size!:number; }
 export class UpdateCompanyDto { @ApiProperty({example:'Verified Goods Ltd'}) @IsString() @Length(2,200) companyName!:string; @ApiProperty({example:'Pharmaceuticals'}) @IsString() industry!:string; @ApiProperty({example:'Nigeria'}) @IsString() country!:string; @ApiPropertyOptional({example:'https://example.com'}) @IsOptional() @IsString() @Length(1,500) website?:string; @ApiPropertyOptional({example:'contact@example.com'}) @IsOptional() @IsEmail() contactEmail?:string; @ApiPropertyOptional({example:'+2348012345678'}) @IsOptional() @IsString() @MaxLength(50) contactPhone?:string; @ApiPropertyOptional({type:()=>AddressDto}) @IsOptional() @ValidateNested() @Type(()=>AddressDto) address?:AddressDto; }
 export class ChangePasswordDto { @ApiProperty({example:'CurrentPass123!'}) @IsString() currentPassword!:string; @ApiProperty({example:'NewSecurePass123!',minLength:6,maxLength:128}) @IsString() @Length(6,128) newPassword!:string; }
+export class ContactSupportDto {
+  @IsUUID() requestId!: string;
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value) @IsString() @Length(3, 120) subject!: string;
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value) @IsString() @Length(10, 5000) message!: string;
+  @IsOptional() @IsString() @Length(1, 120) @Matches(/^[A-Za-z0-9][A-Za-z0-9._ ()-]*$/) attachmentName?: string;
+  @IsOptional() @IsIn(['image/jpeg', 'image/png', 'application/pdf']) attachmentMimeType?: 'image/jpeg' | 'image/png' | 'application/pdf';
+  @IsOptional() @IsString() @MaxLength(4200000) @Matches(/^[A-Za-z0-9+/]+={0,2}$/) attachmentBase64?: string;
+}

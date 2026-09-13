@@ -16,6 +16,7 @@ import { EmailTemplateEntity, EmailTemplateHistoryEntity } from './email-templat
 import { EmailTemplateService } from './email-template.service';
 import { EmailTemplateController } from './email-template.controller';
 import { ReliabilityService } from './reliability.service';
+import { CustomerSupportRequestEntity } from '../customer/customer.entity';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { ReliabilityService } from './reliability.service';
       VerificationCodeEntity,
       EmailTemplateEntity,
       EmailTemplateHistoryEntity,
+      CustomerSupportRequestEntity,
     ]),
   ],
   controllers: [OperationsController, EmailTemplateController],

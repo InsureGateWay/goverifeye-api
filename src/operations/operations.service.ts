@@ -1,9 +1,12 @@
-import { Injectable } from '@nestjs/common'; import { DataSource, ILike } from 'typeorm'; import * as argon2 from 'argon2';
+import { Injectable } from '@nestjs/common'; import { DataSource, ILike, In } from 'typeorm'; import * as argon2 from 'argon2'; import { createHash } from 'crypto';
 import { pageOf } from '../common/api-response'; import { toOrder } from '../common/page-query.dto'; import { DomainError } from '../common/domain-error'; import { RequestContext } from '../common/request-context'; import { UserEntity } from '../auth/auth.entity'; import { UserRole } from '../auth/authorization'; import { OrganizationDocumentEntity, OrganizationEntity } from '../onboarding/onboarding.entity';
 import { ApprovalDecisionEntity } from '../approvals/approval.entity';
-import { AuditLogEntity, NotificationEntity } from './operations.entity'; import { AuditQueryDto, AuditSummaryQueryDto, ChangePasswordDto, NotificationQueryDto, UpdateCompanyDto, UpdateProfileDto } from './operations.dto'; import { applyAuditListFilters, auditDateBoundary, mapVendorAuditRowMetadata } from './audit-query.util';
+import { AuditLogEntity, NotificationEntity } from './operations.entity'; import { AuditQueryDto, AuditSummaryQueryDto, ChangePasswordDto, ContactSupportDto, NotificationQueryDto, UpdateCompanyDto, UpdateProfileDto } from './operations.dto'; import { applyAuditListFilters, auditDateBoundary, mapVendorAuditRowMetadata } from './audit-query.util';
+import { ReliabilityService } from './reliability.service';
+import { CustomerSupportRequestEntity } from '../customer/customer.entity';
+import { customerSupportAdminEmail, customerSupportReceiptEmail } from '../customer/customer-support-email';
 @Injectable() export class OperationsService {
-  constructor(private readonly db:DataSource) {}
+  constructor(private readonly db:DataSource,private readonly reliability:ReliabilityService) {}
   async audit(organizationId:string, actorId:string, action:string, resourceType:string, resourceId?:string, metadata?:Record<string,unknown>) { return this.db.getRepository(AuditLogEntity).save({ organizationId,actorId,action,resourceType,resourceId,metadata,status:'success' }); }
   async listAudit(organizationId:string,q:AuditQueryDto){
     const qb=this.db.getRepository(AuditLogEntity).createQueryBuilder('audit').leftJoin(UserEntity,'actor','actor.id = audit.actorId AND actor.organizationId = audit.organizationId').addSelect(['actor.firstName','actor.lastName','actor.email','actor.profileImageUrl']).where('audit.organizationId = :organizationId',{organizationId});
@@ -83,5 +86,27 @@ import { AuditLogEntity, NotificationEntity } from './operations.entity'; import
     return repo.save(row);
   }
   async changePassword(organizationId:string,userId:string,dto:ChangePasswordDto){ const repo=this.db.getRepository(UserEntity); const user=await repo.findOneBy({id:userId,organizationId,isActive:true}); if(!user||!await argon2.verify(user.passwordHash,dto.currentPassword)) throw new DomainError('Current password is incorrect','INVALID_PASSWORD',401); user.passwordHash=await argon2.hash(dto.newPassword,{type:argon2.argon2id}); user.mustChangePassword=false; await repo.save(user); await this.audit(organizationId,userId,'password.changed','user',userId); return {changed:true}; }
+  async contactSupport(u:RequestContext,dto:ContactSupportDto){
+    const [user,organization]=await Promise.all([this.db.getRepository(UserEntity).findOneBy({id:u.userId,organizationId:u.organizationId,isActive:true}),this.db.getRepository(OrganizationEntity).findOneBy({id:u.organizationId})]);
+    if(!user)throw new DomainError('Your account was not found','PROFILE_NOT_FOUND',404);
+    const attachmentFields=[dto.attachmentName,dto.attachmentMimeType,dto.attachmentBase64];
+    if(attachmentFields.some(Boolean)&&!attachmentFields.every(Boolean))throw new DomainError('The attachment is incomplete. Remove it and attach the file again.','INVALID_SUPPORT_ATTACHMENT',400);
+    const attachment=dto.attachmentBase64?this.supportAttachment(dto.attachmentName!,dto.attachmentMimeType!,dto.attachmentBase64):undefined;
+    const attachmentSha256=attachment?createHash('sha256').update(Buffer.from(attachment.content,'base64')).digest('hex'):null;
+    const repository=this.db.getRepository(CustomerSupportRequestEntity),existing=await repository.findOneBy({requestId:dto.requestId});
+    if(existing){if(existing.email!==user.email.trim().toLowerCase()||existing.subject!==dto.subject||existing.message!==dto.message||existing.attachmentSha256!==attachmentSha256)throw new DomainError('This request identifier is already in use.','REQUEST_ID_CONFLICT',409);return{reference:existing.id,submittedAt:existing.createdAt.toISOString()};}
+    return this.db.transaction(async manager=>{
+      const recipients=await manager.find(UserEntity,{where:{role:In(['platform_admin','super_admin']),isActive:true},select:{id:true,email:true}}),uniqueRecipients=[...new Map(recipients.map(recipient=>[recipient.email.trim().toLowerCase(),recipient])).values()];
+      if(!uniqueRecipients.length)throw new DomainError('Contact support is temporarily unavailable. Please try again later.','SUPPORT_RECIPIENT_UNAVAILABLE',503);
+      const row=await manager.save(CustomerSupportRequestEntity,manager.create(CustomerSupportRequestEntity,{requestId:dto.requestId,shopperId:null,email:user.email.trim().toLowerCase(),subject:dto.subject,message:dto.message,attachmentName:attachment?.filename??null,attachmentMimeType:attachment?.contentType??null,attachmentSha256}));
+      const emailInput={reference:row.id,senderEmail:user.email,senderName:[user.firstName,user.lastName].filter(Boolean).join(' ')||undefined,senderRole:user.role,organizationName:organization?.companyName,requesterLabel:'Vendor' as const,subject:dto.subject,message:dto.message,attachmentName:attachment?.filename};
+      const adminEmail=customerSupportAdminEmail(emailInput);
+      for(const recipient of uniqueRecipients)await this.reliability.enqueue(manager,'email.send','vendor-support-admin',`${row.id}:${recipient.id}`,{to:recipient.email,replyTo:user.email,...adminEmail,...(attachment?{attachments:[attachment]}:{})});
+      await this.reliability.enqueue(manager,'email.send','vendor-support-receipt',`${row.id}:receipt`,{to:user.email,...customerSupportReceiptEmail(emailInput),...(attachment?{attachments:[attachment]}:{})});
+      await manager.save(AuditLogEntity,manager.create(AuditLogEntity,{organizationId:u.organizationId,actorId:u.userId,action:'support.requested',resourceType:'support_request',resourceId:row.id,status:'success',metadata:{subject:dto.subject,hasAttachment:Boolean(attachment)}}));
+      return{reference:row.id,submittedAt:row.createdAt.toISOString()};
+    });
+  }
+  private supportAttachment(filename:string,contentType:NonNullable<ContactSupportDto['attachmentMimeType']>,content:string){const bytes=Buffer.from(content,'base64');if(!bytes.length||bytes.length>3_000_000)throw new DomainError('Choose an attachment smaller than 3 MB.','INVALID_SUPPORT_ATTACHMENT',400);const valid=contentType==='image/jpeg'?bytes[0]===0xff&&bytes[1]===0xd8&&bytes[2]===0xff:contentType==='image/png'?bytes.subarray(0,8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a])):bytes.subarray(0,5).toString('ascii')==='%PDF-';if(!valid)throw new DomainError('The attachment content does not match its file type.','INVALID_SUPPORT_ATTACHMENT',400);const extension=contentType==='image/jpeg'?'.jpg':contentType==='image/png'?'.png':'.pdf',basename=filename.replace(/\.[^.]*$/,'').slice(0,115)||'support-attachment';return{filename:`${basename}${extension}`,content,contentType};}
   async deactivate(organizationId:string,userId:string){ return this.db.transaction(async manager=>{const repo=manager.getRepository(UserEntity);const user=await repo.findOneBy({id:userId,organizationId});if(!user)throw new DomainError('Profile was not found','PROFILE_NOT_FOUND',404);if(user.role==='vendor_admin'&&await repo.countBy({organizationId,role:'vendor_admin',isActive:true})<=1)throw new DomainError('The final active administrator cannot deactivate their account','FINAL_ADMIN_REQUIRED',409);user.isActive=false;await repo.save(user);await manager.getRepository(AuditLogEntity).save({organizationId,actorId:userId,action:'account.deactivated',resourceType:'user',resourceId:userId,status:'success'});await manager.getRepository(UserEntity);return{deactivated:true}}); }
 }
