@@ -1,4 +1,4 @@
-import { In } from 'typeorm';
+import { getMetadataArgsStorage, In } from 'typeorm';
 import { UserEntity } from '../auth/auth.entity';
 import { CustomerSupportRequestEntity } from '../customer/customer.entity';
 import { OrganizationEntity } from '../onboarding/onboarding.entity';
@@ -6,6 +6,12 @@ import { AuditLogEntity } from './operations.entity';
 import { OperationsService } from './operations.service';
 
 describe('OperationsService contact support', () => {
+  it('declares nullable attachment columns with PostgreSQL-supported types', () => {
+    const columns = getMetadataArgsStorage().columns.filter(column => column.target === CustomerSupportRequestEntity);
+    for (const propertyName of ['attachmentName', 'attachmentMimeType', 'attachmentSha256']) {
+      expect(columns.find(column => column.propertyName === propertyName)?.options.type).toBe('varchar');
+    }
+  });
   it('emails every active platform administrator, receipts the vendor, and records an audit event', async () => {
     const now = new Date();
     const user = { id: 'vendor-user', organizationId: 'vendor-org', email: 'vendor@example.com', firstName: 'Ada', lastName: 'Okafor', role: 'vendor_admin', isActive: true };
