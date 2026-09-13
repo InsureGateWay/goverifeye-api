@@ -4,7 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { Public } from '../auth/public.decorator';
-import { ConcernBody, CustomerCheckBody, CustomerHistoryQuery, SharedCheckBody, ShopperAccountDeleteBody, ShopperChallengeBody, ShopperLoginBody, ShopperPasswordLoginBody, ShopperPasswordResetCompleteBody, ShopperPasswordResetVerifyBody, ShopperRegistrationCompleteBody, ShopperRegistrationVerifyBody } from './customer.dto';
+import { ConcernBody, CustomerCheckBody, CustomerHistoryQuery, CustomerSupportBody, SharedCheckBody, ShopperAccountDeleteBody, ShopperChallengeBody, ShopperLoginBody, ShopperPasswordLoginBody, ShopperPasswordResetCompleteBody, ShopperPasswordResetVerifyBody, ShopperRegistrationCompleteBody, ShopperRegistrationVerifyBody } from './customer.dto';
 import type { CustomerCheckDto } from './customer.contract';
 import { CustomerService } from './customer.service';
 
@@ -53,6 +53,8 @@ export class CustomerController {
     response.type('html').send(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>goVerifEye check</title><body><main><h1>goVerifEye check</h1><p>Code: ${escape(check.code)}</p><p>Recorded status: <strong>${escape(check.result.status.replace(/_/g, ' '))}</strong></p>${check.result.product ? `<p>Product: ${escape(check.result.product.name)}</p>` : ''}<p>Checked: ${escape(check.checkedAt)}</p><p>This is a recorded result. Status can change. A code check does not certify product quality or safety.</p><form method="post"><input type="hidden" name="requestId" value="${randomUUID()}"><button type="submit">Get current status</button></form></main></body></html>`);
   }
   @Get('history') history(@Headers('authorization') auth: string | undefined, @Query() query: CustomerHistoryQuery) { return this.service.history(auth, query.page); }
+  @Post('support') @HttpCode(201) @Throttle({ default: { limit: 3, ttl: 3600000 } })
+  contactSupport(@Headers('authorization') auth: string | undefined, @Body() input: CustomerSupportBody) { return this.service.contactSupport(auth, input); }
   @Post('concerns') @Throttle({ default: { limit: 5, ttl: 60000 } })
   report(@Body() input: ConcernBody) { return this.service.report(input); }
 }

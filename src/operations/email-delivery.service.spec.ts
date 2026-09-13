@@ -67,4 +67,17 @@ describe('EmailDeliveryService', () => {
       .resolves.toEqual({ id: '<message-id@example.com>' });
     expect(createTransport).toHaveBeenCalledWith(expect.objectContaining({ host: 'smtp.example.com' }));
   });
+
+  it('forwards reply-to and attachments through Resend', async () => {
+    Object.assign(process.env, {
+      EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 're_test', SMTP_FROM_EMAIL: 'noreply@mail.example.com',
+    });
+    const request = jest.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({ id: 'message-id' }), { status: 200 }));
+    await new EmailDeliveryService().send({
+      to: 'admin@example.com', subject: 'Support', text: 'Body', replyTo: 'shopper@example.com',
+      attachments: [{ filename: 'photo.png', content: 'aGVsbG8=', contentType: 'image/png' }],
+    });
+    const body = JSON.parse(String((request.mock.calls[0]![1] as RequestInit).body));
+    expect(body).toMatchObject({ reply_to: 'shopper@example.com', attachments: [{ filename: 'photo.png', content: 'aGVsbG8=' }] });
+  });
 });

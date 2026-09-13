@@ -1,7 +1,7 @@
 import { IsEmail, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { VerifyProductCodeDto } from '../codes/code.dto';
-import type { CustomerCheckRequestDto, ConcernRequestDto, ShopperAccountDeleteRequestDto, ShopperChallengeRequestDto, ShopperLoginRequestDto, ShopperPasswordLoginRequestDto, ShopperPasswordResetCompleteRequestDto, ShopperPasswordResetVerifyRequestDto, ShopperRegistrationCompleteRequestDto, ShopperRegistrationVerifyRequestDto } from './customer.contract';
+import type { CustomerCheckRequestDto, ConcernRequestDto, CustomerSupportRequestDto, ShopperAccountDeleteRequestDto, ShopperChallengeRequestDto, ShopperLoginRequestDto, ShopperPasswordLoginRequestDto, ShopperPasswordResetCompleteRequestDto, ShopperPasswordResetVerifyRequestDto, ShopperRegistrationCompleteRequestDto, ShopperRegistrationVerifyRequestDto } from './customer.contract';
 
 export class CustomerCheckBody extends VerifyProductCodeDto implements CustomerCheckRequestDto {
   @IsUUID() requestId!: string;
@@ -26,6 +26,15 @@ export class ShopperPasswordLoginBody implements ShopperPasswordLoginRequestDto 
 export class ShopperAccountDeleteBody implements ShopperAccountDeleteRequestDto {
   @IsString() @Length(8, 72) password!: string;
   @IsIn(['DELETE']) confirmation!: 'DELETE';
+}
+export class CustomerSupportBody implements CustomerSupportRequestDto {
+  @IsUUID() requestId!: string;
+  @Transform(({ value }) => typeof value === 'string' ? value.trim().toLowerCase() : value) @IsEmail() @MaxLength(254) email!: string;
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value) @IsString() @Length(3, 120) subject!: string;
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value) @IsString() @Length(10, 5000) message!: string;
+  @IsOptional() @IsString() @Length(1, 120) @Matches(/^[A-Za-z0-9][A-Za-z0-9._ ()-]*$/) attachmentName?: string;
+  @IsOptional() @IsIn(['image/jpeg', 'image/png', 'application/pdf']) attachmentMimeType?: 'image/jpeg' | 'image/png' | 'application/pdf';
+  @IsOptional() @IsString() @MaxLength(4200000) @Matches(/^[A-Za-z0-9+/]+={0,2}$/) attachmentBase64?: string;
 }
 export class CustomerHistoryQuery { @Type(() => Number) @IsInt() @Min(1) @Max(10000) page = 1; }
 export class SharedCheckBody { @IsUUID() requestId!: string; }

@@ -26,6 +26,17 @@ export class ShopperSessionEntity extends BaseEntity {
   @Column({ unique: true }) tokenHash!: string;
   @Column('timestamp') expiresAt!: Date;
 }
+@Entity('customer_support_requests')
+export class CustomerSupportRequestEntity extends BaseEntity {
+  @Column('uuid', { unique: true }) requestId!: string;
+  @Column('uuid', { nullable: true }) @Index() shopperId!: string | null;
+  @Column({ length: 254 }) email!: string;
+  @Column({ length: 120 }) subject!: string;
+  @Column('text') message!: string;
+  @Column({ length: 120, nullable: true }) attachmentName!: string | null;
+  @Column({ length: 32, nullable: true }) attachmentMimeType!: string | null;
+  @Column({ length: 64, nullable: true }) attachmentSha256!: string | null;
+}
 @Entity('customer_checks')
 @Index(['shopperId', 'createdAt'])
 export class CustomerCheckEntity extends BaseEntity {

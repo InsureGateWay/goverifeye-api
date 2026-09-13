@@ -8,8 +8,10 @@ import { ReliabilityService } from '../operations/reliability.service';
 import { verificationCodeEmail } from '../operations/email-templates';
 import { EMAIL_OTP_TTL_MINUTES, EMAIL_OTP_TTL_MS, EMAIL_OTP_TTL_SECONDS } from '../common/email-otp-policy';
 import { AuditLogEntity } from '../operations/operations.entity';
-import { CustomerCheckEntity, CustomerConcernEntity, ShopperChallengeEntity, ShopperEntity, ShopperSessionEntity } from './customer.entity';
-import type { ConcernReceiptDto, ConcernRequestDto, CustomerCheckDto, CustomerCheckRequestDto, CustomerHistoryDto, ShopperAccountDeleteResponseDto, ShopperChallengeDto, ShopperDto, ShopperRegistrationVerifiedDto, ShopperSessionDto } from './customer.contract';
+import { UserEntity } from '../auth/auth.entity';
+import { CustomerCheckEntity, CustomerConcernEntity, CustomerSupportRequestEntity, ShopperChallengeEntity, ShopperEntity, ShopperSessionEntity } from './customer.entity';
+import type { ConcernReceiptDto, ConcernRequestDto, CustomerCheckDto, CustomerCheckRequestDto, CustomerHistoryDto, CustomerSupportReceiptDto, CustomerSupportRequestDto, ShopperAccountDeleteResponseDto, ShopperChallengeDto, ShopperDto, ShopperRegistrationVerifiedDto, ShopperSessionDto } from './customer.contract';
+import { customerSupportAdminEmail, customerSupportReceiptEmail } from './customer-support-email';
 
 const persistentShopperSessionExpiry = () => new Date('9999-12-31T23:59:59.999Z');
 
@@ -259,6 +261,53 @@ export class CustomerService {
     const shopper = await this.shopper(header);
     const rows = await this.db.getRepository(CustomerCheckEntity).find({ where: { shopperId: shopper!.id }, order: { createdAt: 'DESC', id: 'DESC' }, skip: (page - 1) * 20, take: 21 });
     return { items: rows.slice(0, 20).map(row => this.dto(row)), page, hasMore: rows.length > 20 };
+  }
+
+  async contactSupport(header: string | undefined, input: CustomerSupportRequestDto): Promise<CustomerSupportReceiptDto> {
+    const shopper = await this.shopper(header, false);
+    const senderEmail = (shopper?.email ?? input.email).trim().toLowerCase();
+    const attachmentFields = [input.attachmentName, input.attachmentMimeType, input.attachmentBase64];
+    if (attachmentFields.some(Boolean) && !attachmentFields.every(Boolean)) throw new DomainError('The attachment is incomplete. Remove it and attach the file again.', 'INVALID_SUPPORT_ATTACHMENT', 400);
+    const attachment = input.attachmentBase64 ? this.supportAttachment(input.attachmentName!, input.attachmentMimeType!, input.attachmentBase64) : undefined;
+    const attachmentSha256 = attachment ? createHash('sha256').update(Buffer.from(attachment.content, 'base64')).digest('hex') : null;
+    const repository = this.db.getRepository(CustomerSupportRequestEntity);
+    const existing = await repository.findOneBy({ requestId: input.requestId });
+    if (existing) {
+      if (existing.email !== senderEmail || existing.subject !== input.subject || existing.message !== input.message || existing.attachmentSha256 !== attachmentSha256) throw new DomainError('This request identifier is already in use.', 'REQUEST_ID_CONFLICT', 409);
+      return { reference: existing.id, submittedAt: existing.createdAt.toISOString() };
+    }
+    return this.db.transaction(async (manager) => {
+      const recipients = await manager.find(UserEntity, { where: { role: In(['platform_admin', 'super_admin']), isActive: true }, select: { id: true, email: true, firstName: true } });
+      const uniqueRecipients = [...new Map(recipients.map((recipient) => [recipient.email.trim().toLowerCase(), recipient])).values()];
+      if (!uniqueRecipients.length) throw new DomainError('Customer support is temporarily unavailable. Please try again later.', 'SUPPORT_RECIPIENT_UNAVAILABLE', 503);
+      const row = await manager.save(CustomerSupportRequestEntity, manager.create(CustomerSupportRequestEntity, {
+        requestId: input.requestId, shopperId: shopper?.id ?? null, email: senderEmail, subject: input.subject, message: input.message,
+        attachmentName: attachment?.filename ?? null, attachmentMimeType: attachment?.contentType ?? null, attachmentSha256,
+      }));
+      const emailInput = { reference: row.id, senderEmail, senderName: shopper?.displayName ?? undefined, subject: input.subject, message: input.message, attachmentName: attachment?.filename };
+      const adminEmail = customerSupportAdminEmail(emailInput);
+      for (const recipient of uniqueRecipients) {
+        await this.reliability.enqueue(manager, 'email.send', 'customer-support-admin', `${row.id}:${recipient.id}`, {
+          to: recipient.email, replyTo: senderEmail, ...adminEmail, ...(attachment ? { attachments: [attachment] } : {}),
+        });
+      }
+      await this.reliability.enqueue(manager, 'email.send', 'customer-support-receipt', `${row.id}:receipt`, {
+        to: senderEmail, ...customerSupportReceiptEmail(emailInput), ...(attachment ? { attachments: [attachment] } : {}),
+      });
+      return { reference: row.id, submittedAt: row.createdAt.toISOString() };
+    });
+  }
+
+  private supportAttachment(filename: string, contentType: NonNullable<CustomerSupportRequestDto['attachmentMimeType']>, content: string) {
+    const bytes = Buffer.from(content, 'base64');
+    if (!bytes.length || bytes.length > 3_000_000) throw new DomainError('Choose an attachment smaller than 3 MB.', 'INVALID_SUPPORT_ATTACHMENT', 400);
+    const valid = contentType === 'image/jpeg' ? bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+      : contentType === 'image/png' ? bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+        : bytes.subarray(0, 5).toString('ascii') === '%PDF-';
+    if (!valid) throw new DomainError('The attachment content does not match its file type.', 'INVALID_SUPPORT_ATTACHMENT', 400);
+    const extension = contentType === 'image/jpeg' ? '.jpg' : contentType === 'image/png' ? '.png' : '.pdf';
+    const basename = filename.replace(/\.[^.]*$/, '').slice(0, 115) || 'support-attachment';
+    return { filename: `${basename}${extension}`, content, contentType };
   }
 
   async report(input: ConcernRequestDto): Promise<ConcernReceiptDto> {

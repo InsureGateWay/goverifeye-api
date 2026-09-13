@@ -2,7 +2,8 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import { Transporter } from 'nodemailer';
 
-export interface EmailMessage { to: string; subject: string; text: string; html?: string }
+export interface EmailAttachment { filename: string; content: string; contentType?: string }
+export interface EmailMessage { to: string; subject: string; text: string; html?: string; replyTo?: string; attachments?: EmailAttachment[] }
 
 @Injectable()
 export class EmailDeliveryService {
@@ -39,6 +40,8 @@ export class EmailDeliveryService {
           subject: message.subject,
           text: message.text,
           ...(message.html ? { html: message.html } : {}),
+          ...(message.replyTo ? { reply_to: message.replyTo } : {}),
+          ...(message.attachments?.length ? { attachments: message.attachments.map(({ filename, content }) => ({ filename, content })) } : {}),
         }),
         signal: AbortSignal.timeout(15_000),
       });
@@ -64,6 +67,12 @@ export class EmailDeliveryService {
       subject: message.subject,
       text: message.text,
       html: message.html,
+      replyTo: message.replyTo,
+      attachments: message.attachments?.map((attachment) => ({
+        filename: attachment.filename,
+        content: Buffer.from(attachment.content, 'base64'),
+        contentType: attachment.contentType,
+      })),
     });
     return { id: result.messageId };
   }

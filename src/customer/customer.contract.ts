@@ -23,6 +23,16 @@ export type ShopperPasswordResetCompleteRequestDto = { resetToken: string; passw
 export type ShopperAccountDeleteRequestDto = { password: string; confirmation: 'DELETE' };
 export type ShopperAccountDeleteResponseDto = { deleted: true };
 export type ShopperSessionDto = { accessToken: string; expiresAt: string; shopper: ShopperDto };
+export type CustomerSupportRequestDto = {
+  requestId: string;
+  email: string;
+  subject: string;
+  message: string;
+  attachmentName?: string;
+  attachmentMimeType?: 'image/jpeg' | 'image/png' | 'application/pdf';
+  attachmentBase64?: string;
+};
+export type CustomerSupportReceiptDto = { reference: string; submittedAt: string };
 export type ConcernRequestDto = { requestId: string; receipt: string; reason: string; note?: string; photo?: string };
 export type ConcernReceiptDto = { id: string; submittedAt: string };
 export type ApiErrorDto = { code?: string; title?: string; message?: string | string[]; detail?: string | string[]; status?: number; correlationId?: string };

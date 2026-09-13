@@ -1,7 +1,9 @@
 import * as argon2 from 'argon2';
+import { In } from 'typeorm';
 import { CustomerService } from './customer.service';
-import { CustomerCheckEntity, CustomerConcernEntity, ShopperChallengeEntity, ShopperEntity, ShopperSessionEntity } from './customer.entity';
+import { CustomerCheckEntity, CustomerConcernEntity, CustomerSupportRequestEntity, ShopperChallengeEntity, ShopperEntity, ShopperSessionEntity } from './customer.entity';
 import { AuditLogEntity } from '../operations/operations.entity';
+import { UserEntity } from '../auth/auth.entity';
 
 describe('shopper isolation and verification retries', () => {
   const now = new Date();
@@ -167,5 +169,29 @@ describe('shopper isolation and verification retries', () => {
     await expect(service.deleteAccount('Bearer ' + 'd'.repeat(64), 'Wrong password 1')).rejects.toMatchObject({ code: 'INVALID_SHOPPER_CREDENTIALS', status: 401 });
     expect(manager.delete).not.toHaveBeenCalled();
     expect(manager.save).toHaveBeenCalledWith(AuditLogEntity, expect.objectContaining({ action: 'shopper.account.deletion_failed', status: 'failure' }));
+  });
+  it('emails every active platform administrator and a receipt to the support sender', async () => {
+    const now = new Date();
+    const support = { findOneBy: jest.fn(async () => null) };
+    const manager = {
+      find: jest.fn(async type => type === UserEntity ? [
+        { id: 'admin-1', email: 'platform@example.com', firstName: 'Platform' },
+        { id: 'admin-2', email: 'super@example.com', firstName: 'Super' },
+      ] : []),
+      create: jest.fn((_type, value) => value),
+      save: jest.fn(async (_type, value) => ({ ...value, id: 'support-id', createdAt: now })),
+    };
+    const db = { getRepository: jest.fn(type => type === CustomerSupportRequestEntity ? support : {}), transaction: jest.fn(async callback => callback(manager)) };
+    const reliability = { enqueue: jest.fn(async () => undefined) };
+    const service = new CustomerService(db as never, {} as never, reliability as never);
+    const result = await service.contactSupport(undefined, {
+      requestId: '7d12c6f2-444f-42a9-9a55-bf16ad269cf4', email: 'shopper@example.com', subject: 'Unable to scan', message: 'The camera cannot scan my product label.',
+      attachmentName: 'label.png', attachmentMimeType: 'image/png', attachmentBase64: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString('base64'),
+    });
+    expect(result).toEqual({ reference: 'support-id', submittedAt: now.toISOString() });
+    expect(manager.find).toHaveBeenCalledWith(UserEntity, expect.objectContaining({ where: { role: In(['platform_admin', 'super_admin']), isActive: true } }));
+    expect(reliability.enqueue).toHaveBeenCalledTimes(3);
+    expect(reliability.enqueue).toHaveBeenCalledWith(manager, 'email.send', 'customer-support-admin', 'support-id:admin-1', expect.objectContaining({ to: 'platform@example.com', replyTo: 'shopper@example.com', attachments: [expect.objectContaining({ filename: 'label.png' })] }));
+    expect(reliability.enqueue).toHaveBeenCalledWith(manager, 'email.send', 'customer-support-receipt', 'support-id:receipt', expect.objectContaining({ to: 'shopper@example.com' }));
   });
 });
