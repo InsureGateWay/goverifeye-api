@@ -49,7 +49,7 @@ export class LoginIdentityResponseDto {
   @ApiProperty({ enum: ['password', 'registration_otp'], example: 'password' })
   next!: 'password' | 'registration_otp';
   @ApiPropertyOptional({ format: 'uuid' }) challengeId?: string;
-  @ApiPropertyOptional({ example: 600 }) expiresInSeconds?: number;
+  @ApiPropertyOptional({ example: 1800 }) expiresInSeconds?: number;
 }
 export class RefreshDto {
   @ApiPropertyOptional({ description: 'Refresh token for non-browser clients. Browsers may use the secure refresh cookie.', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' })
@@ -78,7 +78,7 @@ export class ResetPasswordDto {
 export class ForgotPasswordResponseDto {
   @ApiProperty({example:'If an account exists for that email, a password reset link has been sent.'})
   message!:string;
-  @ApiProperty({example:600}) expiresInSeconds!:number;
+  @ApiProperty({example:1800}) expiresInSeconds!:number;
 }
 export class ResetPasswordResponseDto {
   @ApiProperty({example:true}) passwordReset!:boolean;
@@ -86,7 +86,7 @@ export class ResetPasswordResponseDto {
 export class SessionQueryDto extends PageQueryDto { @IsIn(['createdAt','updatedAt','expiresAt','revokedAt']) override sortBy='createdAt'; }
 export class OtpChallengeResponseDto {
   @ApiProperty({ format: 'uuid', example: 'f17fdb48-05ec-44bf-b882-d480c90e0c91' }) challengeId!: string;
-  @ApiProperty({ example: 600 }) expiresInSeconds!: number;
+  @ApiProperty({ example: 1800 }) expiresInSeconds!: number;
   @ApiProperty({ example: 'If this email is eligible for registration, a verification code will be sent.' }) message!: string;
 }
 export class OtpVerifiedResponseDto {

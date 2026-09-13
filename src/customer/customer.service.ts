@@ -6,6 +6,7 @@ import { CodesService } from '../codes/codes.service';
 import { DomainError } from '../common/domain-error';
 import { ReliabilityService } from '../operations/reliability.service';
 import { verificationCodeEmail } from '../operations/email-templates';
+import { EMAIL_OTP_TTL_MINUTES, EMAIL_OTP_TTL_MS, EMAIL_OTP_TTL_SECONDS } from '../common/email-otp-policy';
 import { AuditLogEntity } from '../operations/operations.entity';
 import { CustomerCheckEntity, CustomerConcernEntity, ShopperChallengeEntity, ShopperEntity, ShopperSessionEntity } from './customer.entity';
 import type { ConcernReceiptDto, ConcernRequestDto, CustomerCheckDto, CustomerCheckRequestDto, CustomerHistoryDto, ShopperAccountDeleteResponseDto, ShopperChallengeDto, ShopperDto, ShopperRegistrationVerifiedDto, ShopperSessionDto } from './customer.contract';
@@ -44,11 +45,11 @@ export class CustomerService {
     const code = randomInt(0, 1000000).toString().padStart(6, '0');
     const challenge = await this.db.transaction(async manager => {
       await manager.update(ShopperChallengeEntity, { email, purpose, consumed: false }, { consumed: true });
-      const saved = await manager.save(ShopperChallengeEntity, manager.create(ShopperChallengeEntity, { email, purpose, codeHash: await argon2.hash(code), expiresAt: new Date(Date.now() + 600000) }));
-      await this.reliability.enqueue(manager, 'email.send', 'shopper-login', saved.id, { to: email, ...verificationCodeEmail(code, 10) });
+      const saved = await manager.save(ShopperChallengeEntity, manager.create(ShopperChallengeEntity, { email, purpose, codeHash: await argon2.hash(code), expiresAt: new Date(Date.now() + EMAIL_OTP_TTL_MS) }));
+      await this.reliability.enqueue(manager, 'email.send', 'shopper-login', saved.id, { to: email, ...verificationCodeEmail(code, EMAIL_OTP_TTL_MINUTES) });
       return saved;
     });
-    return { challengeId: challenge.id, expiresInSeconds: 600, message };
+    return { challengeId: challenge.id, expiresInSeconds: EMAIL_OTP_TTL_SECONDS, message };
   }
 
   async requestLogin(email: string): Promise<ShopperChallengeDto> {

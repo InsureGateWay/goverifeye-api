@@ -23,6 +23,7 @@ import { Fulfillment } from './code.enums';
 import { PricingService } from '../commerce/pricing.service';
 import { EmailTemplateService } from '../operations/email-template.service';
 import { verificationCodeEmail } from '../operations/email-templates';
+import { EMAIL_OTP_TTL_MINUTES, EMAIL_OTP_TTL_MS, EMAIL_OTP_TTL_SECONDS } from '../common/email-otp-policy';
 import { ScanIdentityService } from './scan-identity.service';
 import { isInternalProductName } from './internal-products';
 import { AnomalyDetectionService } from './anomaly-detection.service';
@@ -167,7 +168,7 @@ export class CodesService {
       userId: user.userId,
       organizationId: user.organizationId,
       inventoryBatchId: inventory.id,
-      expiresAt: new Date(Date.now() + 15 * 60_000),
+      expiresAt: new Date(Date.now() + EMAIL_OTP_TTL_MS),
     }));
     return {
       claimId: claim.id,
@@ -177,7 +178,7 @@ export class CodesService {
         quantity: inventory.quantity,
         totalCost: Number(inventory.totalCost),
       },
-      expiresInSeconds: 900,
+      expiresInSeconds: EMAIL_OTP_TTL_SECONDS,
     };
   }
 
@@ -216,15 +217,15 @@ export class CodesService {
     claim.productId = product.id;
     claim.otpHash = await argon2.hash(code, { type: argon2.argon2id });
     claim.attempts = 0;
-    claim.expiresAt = new Date(Date.now() + 10 * 60_000);
+    claim.expiresAt = new Date(Date.now() + EMAIL_OTP_TTL_MS);
     await this.dataSource.transaction(async (manager) => {
       await manager.save(OpenMarketClaimEntity, claim);
-      const variables = { code, expiresInMinutes: 10 };
+      const variables = { code, expiresInMinutes: EMAIL_OTP_TTL_MINUTES };
       const content = await this.emailTemplates.render(
         manager,
         'auth.open_market_otp',
         variables,
-        () => verificationCodeEmail(code, 10),
+        () => verificationCodeEmail(code, EMAIL_OTP_TTL_MINUTES),
       );
       await this.reliability.enqueue(manager, 'email.send', 'open-market-claim', claim.id, {
         to: account.email,
@@ -234,7 +235,7 @@ export class CodesService {
     return {
       claimId: claim.id,
       maskedEmail: this.maskEmail(account.email),
-      expiresInSeconds: 600,
+      expiresInSeconds: EMAIL_OTP_TTL_SECONDS,
       ...(process.env.NODE_ENV === 'test' ? { code } : {}),
     };
   }

@@ -70,7 +70,7 @@ describe('shopper isolation and verification retries', () => {
     const db = { getRepository: jest.fn(type => type === ShopperChallengeEntity ? challenges : shoppers), transaction: jest.fn(async callback => callback(manager)) };
     const reliability = { enqueue: jest.fn(async () => undefined) };
     const service = new CustomerService(db as never, {} as never, reliability as never);
-    await expect(service.requestRegistration(' Shopper@Example.com ')).resolves.toMatchObject({ challengeId: 'challenge-id', expiresInSeconds: 600 });
+    await expect(service.requestRegistration(' Shopper@Example.com ')).resolves.toMatchObject({ challengeId: 'challenge-id', expiresInSeconds: 1800 });
     expect(manager.update).toHaveBeenCalledWith(ShopperChallengeEntity, { email: 'shopper@example.com', purpose: 'registration', consumed: false }, { consumed: true });
     expect(manager.create).toHaveBeenCalledWith(ShopperChallengeEntity, expect.objectContaining({ email: 'shopper@example.com', purpose: 'registration' }));
     challenges.findOne.mockResolvedValue({ createdAt: new Date() } as never);
