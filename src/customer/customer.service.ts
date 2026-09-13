@@ -1,13 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { createHash, randomBytes, randomInt } from 'crypto';
 import * as argon2 from 'argon2';
-import { DataSource, EntityManager, MoreThan } from 'typeorm';
+import { DataSource, EntityManager, In, MoreThan } from 'typeorm';
 import { CodesService } from '../codes/codes.service';
 import { DomainError } from '../common/domain-error';
 import { ReliabilityService } from '../operations/reliability.service';
 import { verificationCodeEmail } from '../operations/email-templates';
+import { AuditLogEntity } from '../operations/operations.entity';
 import { CustomerCheckEntity, CustomerConcernEntity, ShopperChallengeEntity, ShopperEntity, ShopperSessionEntity } from './customer.entity';
-import type { ConcernReceiptDto, ConcernRequestDto, CustomerCheckDto, CustomerCheckRequestDto, CustomerHistoryDto, ShopperChallengeDto, ShopperDto, ShopperRegistrationVerifiedDto, ShopperSessionDto } from './customer.contract';
+import type { ConcernReceiptDto, ConcernRequestDto, CustomerCheckDto, CustomerCheckRequestDto, CustomerHistoryDto, ShopperAccountDeleteResponseDto, ShopperChallengeDto, ShopperDto, ShopperRegistrationVerifiedDto, ShopperSessionDto } from './customer.contract';
 
 const persistentShopperSessionExpiry = () => new Date('9999-12-31T23:59:59.999Z');
 
@@ -175,6 +176,49 @@ export class CustomerService {
     const token = this.token(header);
     if (token) await this.db.getRepository(ShopperSessionEntity).delete({ tokenHash: this.hash(token) });
     return { loggedOut: true };
+  }
+
+  async deleteAccount(header: string | undefined, password: string): Promise<ShopperAccountDeleteResponseDto> {
+    const authenticated = await this.shopper(header);
+    const deleted = await this.db.transaction(async manager => {
+      const shopper = await manager.getRepository(ShopperEntity).createQueryBuilder('shopper')
+        .addSelect('shopper.passwordHash')
+        .where('shopper.id = :id', { id: authenticated!.id })
+        .setLock('pessimistic_write')
+        .getOne();
+      if (!shopper?.passwordHash || !await argon2.verify(shopper.passwordHash, password)) {
+        await manager.save(AuditLogEntity, manager.create(AuditLogEntity, {
+          organizationId: null,
+          actorId: null,
+          action: 'shopper.account.deletion_failed',
+          resourceType: 'shopper_account',
+          resourceId: authenticated!.id,
+          status: 'failure',
+          metadata: { reason: 'password_reauthentication_failed', authority: 'Customer self-service' },
+        }));
+        return false;
+      }
+
+      const checks = await manager.find(CustomerCheckEntity, { where: { shopperId: shopper.id }, select: { id: true } });
+      const checkIds = checks.map(check => check.id);
+      if (checkIds.length) await manager.delete(CustomerConcernEntity, { checkId: In(checkIds) });
+      await manager.update(CustomerCheckEntity, { shopperId: shopper.id }, { shopperId: null });
+      await manager.delete(ShopperChallengeEntity, { email: shopper.email });
+      await manager.delete(ShopperSessionEntity, { shopperId: shopper.id });
+      await manager.delete(ShopperEntity, { id: shopper.id });
+      await manager.save(AuditLogEntity, manager.create(AuditLogEntity, {
+        organizationId: null,
+        actorId: null,
+        action: 'shopper.account.deleted',
+        resourceType: 'shopper_account',
+        resourceId: shopper.id,
+        status: 'success',
+        metadata: { anonymizedCheckCount: checkIds.length, authority: 'Customer self-service' },
+      }));
+      return true;
+    });
+    if (!deleted) throw new DomainError('The password is incorrect.', 'INVALID_SHOPPER_CREDENTIALS', 401);
+    return { deleted: true };
   }
 
   private dto(row: CustomerCheckEntity): CustomerCheckDto {

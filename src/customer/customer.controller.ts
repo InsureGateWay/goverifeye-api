@@ -1,10 +1,10 @@
-import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Post, Query, Req, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { Public } from '../auth/public.decorator';
-import { ConcernBody, CustomerCheckBody, CustomerHistoryQuery, SharedCheckBody, ShopperChallengeBody, ShopperLoginBody, ShopperPasswordLoginBody, ShopperPasswordResetCompleteBody, ShopperPasswordResetVerifyBody, ShopperRegistrationCompleteBody, ShopperRegistrationVerifyBody } from './customer.dto';
+import { ConcernBody, CustomerCheckBody, CustomerHistoryQuery, SharedCheckBody, ShopperAccountDeleteBody, ShopperChallengeBody, ShopperLoginBody, ShopperPasswordLoginBody, ShopperPasswordResetCompleteBody, ShopperPasswordResetVerifyBody, ShopperRegistrationCompleteBody, ShopperRegistrationVerifyBody } from './customer.dto';
 import type { CustomerCheckDto } from './customer.contract';
 import { CustomerService } from './customer.service';
 
@@ -32,6 +32,8 @@ export class CustomerController {
   passwordResetComplete(@Body() input: ShopperPasswordResetCompleteBody) { return this.service.completePasswordReset(input.resetToken, input.password); }
   @Get('auth/me') async me(@Headers('authorization') auth?: string) { const shopper = await this.service.shopper(auth); return { id: shopper!.id, email: shopper!.email, ...(shopper!.displayName ? { displayName: shopper!.displayName } : {}) }; }
   @Post('auth/logout') @HttpCode(200) logout(@Headers('authorization') auth?: string) { return this.service.logout(auth); }
+  @Delete('auth/account') @HttpCode(200) @Throttle({ default: { limit: 5, ttl: 60000 } })
+  deleteAccount(@Headers('authorization') auth: string | undefined, @Body() input: ShopperAccountDeleteBody) { return this.service.deleteAccount(auth, input.password); }
   @Post('checks') @HttpCode(200) @Throttle({ default: { limit: 30, ttl: 60000 } })
   check(@Body() input: CustomerCheckBody, @Req() request: Request) { return this.service.check(input, request.get('authorization'), { ip: request.ip, userAgent: request.get('user-agent') }); }
   @Get('checks/:receipt') details(@Param('receipt') receipt: string) { return this.service.details(receipt); }

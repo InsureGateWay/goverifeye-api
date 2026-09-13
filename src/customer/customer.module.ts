@@ -6,6 +6,7 @@ import { CustomerController } from './customer.controller';
 import { CustomerConcernsController } from './customer-concerns.controller';
 import { CustomerService } from './customer.service';
 import { CustomerCheckEntity, CustomerConcernEntity, ShopperChallengeEntity, ShopperEntity, ShopperSessionEntity } from './customer.entity';
+import { AuditLogEntity } from '../operations/operations.entity';
 
-@Module({ imports: [CodesModule, OperationsModule, TypeOrmModule.forFeature([CustomerCheckEntity, CustomerConcernEntity, ShopperChallengeEntity, ShopperEntity, ShopperSessionEntity])], controllers: [CustomerController, CustomerConcernsController], providers: [CustomerService] })
+@Module({ imports: [CodesModule, OperationsModule, TypeOrmModule.forFeature([AuditLogEntity, CustomerCheckEntity, CustomerConcernEntity, ShopperChallengeEntity, ShopperEntity, ShopperSessionEntity])], controllers: [CustomerController, CustomerConcernsController], providers: [CustomerService] })
 export class CustomerModule {}

@@ -19,7 +19,7 @@ describe('GovernanceService platform product details',()=>{
         findOne:jest.fn().mockResolvedValueOnce({createdAt:new Date('2026-09-07T09:00:00.000Z')}).mockResolvedValueOnce({createdAt:new Date('2026-09-09T09:00:00.000Z')}),
       };
       const auditRepository={find:jest.fn().mockResolvedValue([])},repositories=new Map<unknown,unknown>([[ProductEntity,productRepository],[VerificationCodeEntity,codeRepository],[VerificationEventEntity,eventRepository],[AuditLogEntity,auditRepository]]),db={getRepository:jest.fn((entity:unknown)=>repositories.get(entity))};
-      const service=new GovernanceService(db as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never),query=Object.assign(new PlatformProductDetailsQueryDto(),{page:1,pageSize:10});
+      const service=new GovernanceService(db as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never),query=Object.assign(new PlatformProductDetailsQueryDto(),{page:1,pageSize:10});
       const result=await service.productDetails(product.id,query);
 
       expect(productRepository.findOneBy).toHaveBeenCalledWith({id:product.id});

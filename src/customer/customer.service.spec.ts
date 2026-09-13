@@ -1,6 +1,7 @@
 import * as argon2 from 'argon2';
 import { CustomerService } from './customer.service';
-import { CustomerCheckEntity, ShopperChallengeEntity, ShopperEntity, ShopperSessionEntity } from './customer.entity';
+import { CustomerCheckEntity, CustomerConcernEntity, ShopperChallengeEntity, ShopperEntity, ShopperSessionEntity } from './customer.entity';
+import { AuditLogEntity } from '../operations/operations.entity';
 
 describe('shopper isolation and verification retries', () => {
   const now = new Date();
@@ -118,5 +119,53 @@ describe('shopper isolation and verification retries', () => {
     expect(manager.delete).toHaveBeenCalledWith(ShopperSessionEntity, { shopperId: shopper.id });
     expect(challenge.actionCompletedAt).toBeInstanceOf(Date);
     expect(challenge.actionTokenHash).toBeNull();
+  });
+  it('deletes personal customer data, anonymizes checks, revokes sessions, and records a non-personal audit event', async () => {
+    const passwordHash = await argon2.hash('Correct password 1');
+    const shopper: any = { id: 'shopper-id', email: 'shopper@example.com', passwordHash };
+    const sessions = { findOneBy: jest.fn(async () => ({ shopperId: shopper.id })) };
+    const shoppers = { findOneBy: jest.fn(async () => shopper) };
+    const lockedShopper = { addSelect: jest.fn(), where: jest.fn(), setLock: jest.fn(), getOne: jest.fn(async () => shopper) };
+    lockedShopper.addSelect.mockReturnValue(lockedShopper); lockedShopper.where.mockReturnValue(lockedShopper); lockedShopper.setLock.mockReturnValue(lockedShopper);
+    const shopperRepo = { createQueryBuilder: jest.fn(() => lockedShopper) };
+    const manager = {
+      getRepository: jest.fn(type => type === ShopperEntity ? shopperRepo : undefined),
+      find: jest.fn(async () => [{ id: 'check-1' }, { id: 'check-2' }]),
+      delete: jest.fn(async () => ({ affected: 1 })),
+      update: jest.fn(async () => ({ affected: 2 })),
+      create: jest.fn((_type, value) => value),
+      save: jest.fn(async (_type, value) => value),
+    };
+    const db = {
+      getRepository: jest.fn(type => type === ShopperSessionEntity ? sessions : shoppers),
+      transaction: jest.fn(async callback => callback(manager)),
+    };
+    const service = new CustomerService(db as never, {} as never, {} as never);
+
+    await expect(service.deleteAccount('Bearer ' + 'c'.repeat(64), 'Correct password 1')).resolves.toEqual({ deleted: true });
+    expect(manager.delete).toHaveBeenCalledWith(CustomerConcernEntity, expect.objectContaining({ checkId: expect.anything() }));
+    expect(manager.update).toHaveBeenCalledWith(CustomerCheckEntity, { shopperId: shopper.id }, { shopperId: null });
+    expect(manager.delete).toHaveBeenCalledWith(ShopperChallengeEntity, { email: shopper.email });
+    expect(manager.delete).toHaveBeenCalledWith(ShopperSessionEntity, { shopperId: shopper.id });
+    expect(manager.delete).toHaveBeenCalledWith(ShopperEntity, { id: shopper.id });
+    expect(manager.save).toHaveBeenCalledWith(AuditLogEntity, expect.objectContaining({
+      action: 'shopper.account.deleted', actorId: null, organizationId: null,
+      metadata: { anonymizedCheckCount: 2, authority: 'Customer self-service' },
+    }));
+    expect(JSON.stringify(manager.save.mock.calls)).not.toContain(shopper.email);
+  });
+  it('does not delete an account when password re-authentication fails', async () => {
+    const shopper: any = { id: 'shopper-id', email: 'shopper@example.com', passwordHash: await argon2.hash('Correct password 1') };
+    const sessions = { findOneBy: jest.fn(async () => ({ shopperId: shopper.id })) };
+    const shoppers = { findOneBy: jest.fn(async () => shopper) };
+    const lockedShopper = { addSelect: jest.fn(), where: jest.fn(), setLock: jest.fn(), getOne: jest.fn(async () => shopper) };
+    lockedShopper.addSelect.mockReturnValue(lockedShopper); lockedShopper.where.mockReturnValue(lockedShopper); lockedShopper.setLock.mockReturnValue(lockedShopper);
+    const manager = { getRepository: jest.fn(() => ({ createQueryBuilder: jest.fn(() => lockedShopper) })), create: jest.fn((_type, value) => value), delete: jest.fn(), update: jest.fn(), save: jest.fn(async (_type, value) => value) };
+    const db = { getRepository: jest.fn(type => type === ShopperSessionEntity ? sessions : shoppers), transaction: jest.fn(async callback => callback(manager)) };
+    const service = new CustomerService(db as never, {} as never, {} as never);
+
+    await expect(service.deleteAccount('Bearer ' + 'd'.repeat(64), 'Wrong password 1')).rejects.toMatchObject({ code: 'INVALID_SHOPPER_CREDENTIALS', status: 401 });
+    expect(manager.delete).not.toHaveBeenCalled();
+    expect(manager.save).toHaveBeenCalledWith(AuditLogEntity, expect.objectContaining({ action: 'shopper.account.deletion_failed', status: 'failure' }));
   });
 });

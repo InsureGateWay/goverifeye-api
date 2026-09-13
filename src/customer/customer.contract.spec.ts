@@ -2,7 +2,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { CustomerCheckBody, ConcernBody, ShopperChallengeBody, ShopperLoginBody, ShopperPasswordLoginBody, ShopperPasswordResetCompleteBody, ShopperPasswordResetVerifyBody, ShopperRegistrationCompleteBody, ShopperRegistrationVerifyBody } from './customer.dto';
+import { CustomerCheckBody, ConcernBody, ShopperAccountDeleteBody, ShopperChallengeBody, ShopperLoginBody, ShopperPasswordLoginBody, ShopperPasswordResetCompleteBody, ShopperPasswordResetVerifyBody, ShopperRegistrationCompleteBody, ShopperRegistrationVerifyBody } from './customer.dto';
 
 describe('customer transport contracts', () => {
   const request = { verificationCode: '4827 9364 1523 5739', requestId: '22222222-2222-4222-8222-222222222222' };
@@ -33,6 +33,10 @@ describe('customer transport contracts', () => {
     expect(await validate(plainToInstance(ShopperPasswordResetVerifyBody, { challengeId: request.requestId, code: '123456' }))).toEqual([]);
     expect(await validate(plainToInstance(ShopperPasswordResetCompleteBody, { resetToken: 'b'.repeat(64), password: 'New password 123' }))).toEqual([]);
     expect((await validate(plainToInstance(ShopperRegistrationCompleteBody, { registrationToken: 'bad', displayName: ' ', password: 'short' }))).map(error => error.property)).toEqual(expect.arrayContaining(['registrationToken', 'displayName', 'password']));
+  });
+  it('requires password re-authentication and an exact destructive confirmation', async () => {
+    expect(await validate(plainToInstance(ShopperAccountDeleteBody, { password: 'Correct password 1', confirmation: 'DELETE' }))).toEqual([]);
+    expect((await validate(plainToInstance(ShopperAccountDeleteBody, { password: 'short', confirmation: 'delete' }))).map(error => error.property)).toEqual(expect.arrayContaining(['password', 'confirmation']));
   });
   it('keeps the mobile DTO copy identical to the backend source', () => {
     const canonical = readFileSync(resolve(__dirname, 'customer.contract.ts'), 'utf8').replace(/\r\n/g, '\n');

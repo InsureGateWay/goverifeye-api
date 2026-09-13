@@ -1,7 +1,7 @@
 import { IsEmail, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { VerifyProductCodeDto } from '../codes/code.dto';
-import type { CustomerCheckRequestDto, ConcernRequestDto, ShopperChallengeRequestDto, ShopperLoginRequestDto, ShopperPasswordLoginRequestDto, ShopperPasswordResetCompleteRequestDto, ShopperPasswordResetVerifyRequestDto, ShopperRegistrationCompleteRequestDto, ShopperRegistrationVerifyRequestDto } from './customer.contract';
+import type { CustomerCheckRequestDto, ConcernRequestDto, ShopperAccountDeleteRequestDto, ShopperChallengeRequestDto, ShopperLoginRequestDto, ShopperPasswordLoginRequestDto, ShopperPasswordResetCompleteRequestDto, ShopperPasswordResetVerifyRequestDto, ShopperRegistrationCompleteRequestDto, ShopperRegistrationVerifyRequestDto } from './customer.contract';
 
 export class CustomerCheckBody extends VerifyProductCodeDto implements CustomerCheckRequestDto {
   @IsUUID() requestId!: string;
@@ -22,6 +22,10 @@ export class ShopperPasswordResetCompleteBody implements ShopperPasswordResetCom
 export class ShopperPasswordLoginBody implements ShopperPasswordLoginRequestDto {
   @Transform(({ value }) => typeof value === 'string' ? value.trim().toLowerCase() : value) @IsEmail() @MaxLength(254) email!: string;
   @IsString() @Length(8, 72) password!: string;
+}
+export class ShopperAccountDeleteBody implements ShopperAccountDeleteRequestDto {
+  @IsString() @Length(8, 72) password!: string;
+  @IsIn(['DELETE']) confirmation!: 'DELETE';
 }
 export class CustomerHistoryQuery { @Type(() => Number) @IsInt() @Min(1) @Max(10000) page = 1; }
 export class SharedCheckBody { @IsUUID() requestId!: string; }
