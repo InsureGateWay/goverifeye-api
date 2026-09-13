@@ -59,12 +59,15 @@ export class PlatformAuditLogsService {
 
     const data = entities.map((row, index) => {
       const meta = mapAuditRowMetadata(row);
+      const actorEmail = typeof row.metadata?.actorEmail === 'string'
+        ? row.metadata.actorEmail
+        : '';
       return {
         ...row,
         actor: {
-          firstName: raw[index]?.actor_firstName ?? '',
+          firstName: raw[index]?.actor_firstName ?? (actorEmail ? 'Unauthenticated' : ''),
           lastName: raw[index]?.actor_lastName ?? '',
-          email: raw[index]?.actor_email ?? '',
+          email: raw[index]?.actor_email ?? actorEmail,
           profileImageUrl: raw[index]?.actor_profileImageUrl ?? undefined,
         },
         organizationName: raw[index]?.org_companyName ?? undefined,
@@ -99,7 +102,7 @@ export class PlatformAuditLogsService {
     const totalActivities = await repo.count();
     const actorCounts = new Map<string, number>();
     for (const row of rows) {
-      actorCounts.set(row.actorId, (actorCounts.get(row.actorId) ?? 0) + 1);
+      if (row.actorId) actorCounts.set(row.actorId, (actorCounts.get(row.actorId) ?? 0) + 1);
     }
 
     const mostId = [...actorCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];

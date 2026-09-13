@@ -119,7 +119,8 @@ export function applyAuditListFilters(
           })
           .orWhere('LOWER(actor.firstName) LIKE :search', { search })
           .orWhere('LOWER(actor.lastName) LIKE :search', { search })
-          .orWhere('LOWER(actor.email) LIKE :search', { search });
+          .orWhere('LOWER(actor.email) LIKE :search', { search })
+          .orWhere('LOWER(CAST(audit.metadata AS TEXT)) LIKE :search', { search });
         if (options.includeOrganizationSearch) {
           where.orWhere('LOWER(org.companyName) LIKE :search', { search });
         }
