@@ -40,6 +40,17 @@ export class LoginDto {
   @IsBoolean()
   rememberMe = false;
 }
+export class LoginIdentityDto {
+  @ApiProperty({ example: 'tester@example.com', format: 'email' })
+  @IsEmail()
+  email!: string;
+}
+export class LoginIdentityResponseDto {
+  @ApiProperty({ enum: ['password', 'registration_otp'], example: 'password' })
+  next!: 'password' | 'registration_otp';
+  @ApiPropertyOptional({ format: 'uuid' }) challengeId?: string;
+  @ApiPropertyOptional({ example: 600 }) expiresInSeconds?: number;
+}
 export class RefreshDto {
   @ApiPropertyOptional({ description: 'Refresh token for non-browser clients. Browsers may use the secure refresh cookie.', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' })
   @IsOptional()
