@@ -14,7 +14,8 @@ import {
 } from './governance.dto';
 import { GovernanceService, UploadedVendorFile } from './governance.service';
 import { Public } from '../auth/public.decorator';
-import { CreateProductDocumentUploadDto, CreateProductDto, CreateProductImageUploadDto } from '../products/dto/product.dto';
+import { CreateProductDocumentUploadDto, CreateProductDto, CreateProductImageUploadDto, SetProductDocumentDto } from '../products/dto/product.dto';
+import { CreateDocumentDto, DocumentQueryDto } from '../onboarding/onboarding.dto';
 
 @ApiBearerAuth() @ApiTags('governance') @Controller()
 export class GovernanceController {
@@ -47,6 +48,7 @@ export class GovernanceController {
   @Roles(UserRole.SuperAdmin) @Patch('platform/products/:id/archive') archiveProduct(@CurrentUser()u:RequestContext,@Param('id')id:string){return this.service.setProductStatus(u,id,'archived');}
   @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:vendorId/products/image-upload') createProductImageUploadForVendor(@Param('vendorId')vendorId:string,@Body()dto:CreateProductImageUploadDto){return this.service.createProductImageUploadForVendor(vendorId,dto.fileName);}
   @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:vendorId/products/document-upload') createProductDocumentUploadForVendor(@Param('vendorId')vendorId:string,@Body()dto:CreateProductDocumentUploadDto){return this.service.createProductDocumentUploadForVendor(vendorId,dto.fileName);}
+  @Roles(UserRole.SuperAdmin) @Patch('platform/vendors/:vendorId/products/:productId/document') setProductDocumentForVendor(@CurrentUser()u:RequestContext,@Param('vendorId')vendorId:string,@Param('productId')productId:string,@Body()dto:SetProductDocumentDto){return this.service.setProductDocumentForVendor(u,vendorId,productId,dto.verificationDocumentUrl);}
   @Roles(UserRole.SuperAdmin) @Delete('platform/vendors/:vendorId/products/:productId/image') deleteProductImageForVendor(@CurrentUser()u:RequestContext,@Param('vendorId')vendorId:string,@Param('productId')productId:string){return this.service.deleteProductImageForVendor(u,vendorId,productId);}
   @Roles(UserRole.SuperAdmin) @Delete('platform/vendors/:vendorId/products/:productId/document') deleteProductDocumentForVendor(@CurrentUser()u:RequestContext,@Param('vendorId')vendorId:string,@Param('productId')productId:string){return this.service.deleteProductDocumentForVendor(u,vendorId,productId);}
   @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:vendorId/products') createProductForVendor(@CurrentUser()u:RequestContext,@Param('vendorId')vendorId:string,@Body()dto:CreateProductDto){return this.service.createProductForVendor(u,vendorId,dto);}
@@ -56,6 +58,10 @@ export class GovernanceController {
   @Roles(UserRole.SuperAdmin) @Patch('platform/vendors/:vendorId/image') setVendorLogo(@CurrentUser()u:RequestContext,@Param('vendorId')vendorId:string,@Body()dto:SetVendorLogoDto){return this.service.setVendorLogo(u,vendorId,dto.logoUrl);}
   @Roles(UserRole.SuperAdmin) @Delete('platform/vendors/:vendorId/image') deleteVendorLogo(@CurrentUser()u:RequestContext,@Param('vendorId')vendorId:string){return this.service.deleteVendorLogo(u,vendorId);}
   @Roles(UserRole.SuperAdmin) @Delete('platform/vendors/:vendorId/documents/:documentId') deleteVendorDocument(@CurrentUser()u:RequestContext,@Param('vendorId')vendorId:string,@Param('documentId')documentId:string){return this.service.deleteVendorDocument(u,vendorId,documentId);}
+  @Roles(UserRole.SuperAdmin) @Get('platform/approvals/organizations/:vendorId/documents') vendorDocuments(@Param('vendorId')vendorId:string,@Query()q:DocumentQueryDto){return this.service.listVendorDocuments(vendorId,q);}
+  @Roles(UserRole.SuperAdmin) @Get('platform/approvals/organizations/:vendorId/documents/:documentId/download') vendorDocumentDownload(@Param('vendorId')vendorId:string,@Param('documentId')documentId:string){return this.service.vendorDocumentDownload(vendorId,documentId);}
+  @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:vendorId/documents') createVendorDocument(@CurrentUser()u:RequestContext,@Param('vendorId')vendorId:string,@Body()dto:CreateDocumentDto){return this.service.createVendorDocument(u,vendorId,dto);}
+  @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:vendorId/documents/:documentId/complete') completeVendorDocument(@CurrentUser()u:RequestContext,@Param('vendorId')vendorId:string,@Param('documentId')documentId:string){return this.service.completeVendorDocument(u,vendorId,documentId);}
   @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:id/deactivate') deactivateVendor(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:VendorLifecycleDto){return this.service.vendorLifecycle(u,id,'deactivated',dto);}
   @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:id/reactivate') reactivateVendor(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:VendorLifecycleDto){return this.service.vendorLifecycle(u,id,'approved',dto);}
   @Roles(UserRole.SuperAdmin) @Delete('platform/vendors/:id') deleteVendor(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:DeleteVendorDto){return this.service.deleteVendor(u,id,dto.confirmation);}

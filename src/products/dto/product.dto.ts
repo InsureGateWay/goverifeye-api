@@ -22,3 +22,8 @@ export class CreateProductDocumentUploadDto {
   @ApiProperty({enum:['application/pdf'],example:'application/pdf'}) @IsIn(['application/pdf']) mimeType!:string;
   @ApiProperty({example:1048576,minimum:1,maximum:12582912}) @Type(()=>Number) @IsInt() @Min(1) @Max(12*1024*1024) size!:number;
 }
+export class SetProductDocumentDto {
+  @ApiProperty({example:'https://project.supabase.co/storage/v1/object/public/product-images/organizations/vendor-id/products/documents/document.pdf'})
+  @IsUrl()
+  verificationDocumentUrl!: string;
+}

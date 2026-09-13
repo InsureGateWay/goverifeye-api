@@ -1,7 +1,7 @@
 import { ProductStatus } from './product.model'; import { ProductRepository } from './product.repository'; import { ProductService } from './product.service';
 describe('ProductService', () => {
   const repository: jest.Mocked<ProductRepository> = { find: jest.fn(), findById: jest.fn(), save: jest.fn(), delete: jest.fn() };
-  const images = { removeProductImage: jest.fn(), removeProductDocument: jest.fn() };
+  const images = { assertProductDocument: jest.fn(), removeProductImage: jest.fn(), removeProductDocument: jest.fn() };
   const service = new ProductService(repository, images as never);
   beforeEach(() => jest.clearAllMocks());
   it('creates a pending product scoped to its organization', async () => {
@@ -37,5 +37,14 @@ describe('ProductService', () => {
     await expect(service.deleteDocument('p1','org-1')).resolves.toEqual({deleted:true});
     expect(images.removeProductDocument).toHaveBeenCalledWith('org-1',product.verificationDocumentUrl);
     expect(repository.save).toHaveBeenCalledWith(expect.objectContaining({id:'p1',verificationDocumentUrl:null}));
+  });
+  it('sets a managed verification document and removes the replaced file',async()=>{
+    const previous='https://project.supabase.co/storage/v1/object/public/product-images/organizations/org-1/products/documents/old.pdf';
+    const next='https://project.supabase.co/storage/v1/object/public/product-images/organizations/org-1/products/documents/new.pdf';
+    const product={id:'p1',organizationId:'org-1',name:'P',description:'description',form:'Tablet',manufacturer:'M',verificationDocumentUrl:previous,status:ProductStatus.Pending,totalCodes:0,scanned:0,suspicious:0,createdBy:'u1',createdAt:new Date(),updatedAt:new Date()};
+    repository.findById.mockResolvedValue(product);repository.save.mockImplementation(async value=>value);images.removeProductDocument.mockResolvedValue(undefined);
+    await expect(service.setDocument('p1','org-1',next)).resolves.toMatchObject({verificationDocumentUrl:next});
+    expect(images.assertProductDocument).toHaveBeenCalledWith('org-1',next);
+    expect(images.removeProductDocument).toHaveBeenCalledWith('org-1',previous);
   });
 });

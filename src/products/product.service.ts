@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { NotFoundDomainError } from '../common/domain-error.filter';
 import { CreateProductDto, ProductQueryDto, UpdateProductDto } from './dto/product.dto';
@@ -9,6 +9,7 @@ import { ProductImageStorageService } from './product-image-storage.service';
 import { RequestContext, submittedBy } from '../common/request-context';
 @Injectable()
 export class ProductService {
+  private readonly logger = new Logger(ProductService.name);
   constructor(@Inject(PRODUCT_REPOSITORY) private readonly products: ProductRepository, private readonly images: ProductImageStorageService) {}
   list(organizationId: string, query: ProductQueryDto) { return this.products.find({ organizationId, ...query }); }
   async create(organizationId: string, actor: RequestContext, dto: CreateProductDto) {
@@ -41,5 +42,19 @@ export class ProductService {
     await this.images.removeProductDocument(organizationId, product.verificationDocumentUrl);
     await this.products.save({ ...product, verificationDocumentUrl: null, updatedAt: new Date() });
     return { deleted: true };
+  }
+  async setDocument(id: string, organizationId: string, verificationDocumentUrl: string) {
+    const product = await this.get(id, organizationId);
+    this.images.assertProductDocument(organizationId, verificationDocumentUrl);
+    const previousDocumentUrl = product.verificationDocumentUrl;
+    const saved = await this.products.save({ ...product, verificationDocumentUrl, updatedAt: new Date() });
+    if (previousDocumentUrl && previousDocumentUrl !== verificationDocumentUrl) {
+      try {
+        await this.images.removeProductDocument(organizationId, previousDocumentUrl);
+      } catch (error) {
+        this.logger.warn({ event: 'product-document.replaced-file-cleanup.failed', organizationId, productId: id, reason: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return saved;
   }
 }

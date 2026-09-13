@@ -84,6 +84,10 @@ export class ProductImageStorageService {
     }
   }
 
+  assertProductDocument(organizationId:string, publicUrl:string) {
+    this.managedPath(organizationId, publicUrl, true)
+  }
+
   private managedPath(organizationId:string, publicUrl:string, document:boolean) {
     const configuredUrl = process.env.SUPABASE_URL
     if (!configuredUrl) throw new ServiceUnavailableException('Product image storage is not configured')

@@ -18,6 +18,7 @@ import { ApprovalDecisionEntity } from '../approvals/approval.entity';
 import { ProductEntity } from '../products/product.entity';
 import { ProductStatus } from '../products/product.model';
 import { CreateProductDto } from '../products/dto/product.dto';
+import { CreateDocumentDto, DocumentQueryDto } from '../onboarding/onboarding.dto';
 import { ProductService } from '../products/product.service';
 import { ProductImageStorageService } from '../products/product-image-storage.service';
 import { DocumentStorageService } from '../onboarding/document-storage.service';
@@ -631,8 +632,14 @@ export class GovernanceService {
     return this.productImages.createUpload(vendorId, fileName);
   }
   async createProductDocumentUploadForVendor(vendorId: string, fileName: string) {
-    await this.approvedVendor(vendorId);
+    await this.vendor(vendorId);
     return this.productImages.createDocumentUpload(vendorId, fileName);
+  }
+  async setProductDocumentForVendor(u: RequestContext, vendorId: string, productId: string, verificationDocumentUrl: string) {
+    await this.vendor(vendorId);
+    const product = await this.productService.setDocument(productId, vendorId, verificationDocumentUrl);
+    await this.writeAudit(u, 'platform.product.document_updated_for_vendor', 'product', productId, { vendorId, fileName: verificationDocumentUrl.split('/').pop() });
+    return product;
   }
   async deleteProductImageForVendor(u: RequestContext, vendorId: string, productId: string) {
     await this.vendor(vendorId);
@@ -655,6 +662,58 @@ export class GovernanceService {
     await repository.delete({ id: documentId, organizationId: vendorId });
     await this.writeAudit(u, 'platform.vendor.document_deleted', 'organization_document', documentId, { vendorId, type: document.type, fileName: document.fileName });
     return { deleted: true };
+  }
+  async listVendorDocuments(vendorId: string, q: DocumentQueryDto) {
+    await this.vendor(vendorId);
+    const repository = this.db.getRepository(OrganizationDocumentEntity);
+    const where = {
+      organizationId: vendorId,
+      ...(q.type ? { type: q.type } : {}),
+      ...(q.status ? { status: q.status } : {}),
+      ...(q.search ? { fileName: ILike(`%${q.search}%`) } : {}),
+    };
+    const [rows, total] = await repository.findAndCount({
+      where,
+      order: toOrder(q.sortBy, q.sortDirection, ['fileName','type','status','createdAt','updatedAt'] as const, 'createdAt'),
+      skip: (q.page - 1) * q.pageSize,
+      take: q.pageSize,
+    });
+    const safeRows = rows.map(({ storageKey: _storageKey, sha256: _sha256, ...document }) => document);
+    return pageOf(safeRows, total, q.page, q.pageSize, q.sortBy, q.sortDirection);
+  }
+  async vendorDocumentDownload(vendorId: string, documentId: string) {
+    await this.vendor(vendorId);
+    const document = await this.db.getRepository(OrganizationDocumentEntity).findOneBy({ id: documentId, organizationId: vendorId });
+    if (!document) throw new DomainError('Vendor document was not found', 'DOCUMENT_NOT_FOUND', 404);
+    if (document.status !== 'verified') throw new DomainError('Document is not available for download', 'DOCUMENT_NOT_READY', 409);
+    return this.documents.signedDownload(document.storageKey);
+  }
+  async createVendorDocument(u: RequestContext, vendorId: string, dto: CreateDocumentDto) {
+    await this.vendor(vendorId);
+    const safeName = dto.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storageKey = `organizations/${vendorId}/documents/${randomUUID()}-${safeName}`;
+    const upload = await this.documents.signedUpload(storageKey);
+    const repository = this.db.getRepository(OrganizationDocumentEntity);
+    const document = await repository.save(repository.create({ ...dto, storageKey, status: 'pending_upload', organizationId: vendorId, uploadedBy: u.userId }));
+    await this.writeAudit(u, 'platform.vendor.document_upload_created', 'organization_document', document.id, { vendorId, type: dto.type, fileName: dto.fileName });
+    const { storageKey: _storageKey, sha256: _sha256, ...safeDocument } = document;
+    return { document: safeDocument, upload };
+  }
+  async completeVendorDocument(u: RequestContext, vendorId: string, documentId: string) {
+    await this.vendor(vendorId);
+    const repository = this.db.getRepository(OrganizationDocumentEntity);
+    const document = await repository.findOneBy({ id: documentId, organizationId: vendorId });
+    if (!document) throw new DomainError('Vendor document was not found', 'DOCUMENT_NOT_FOUND', 404);
+    if (document.status !== 'pending_upload') throw new DomainError('Document is not awaiting upload', 'DOCUMENT_STATE_INVALID', 409);
+    const content = await this.documents.download(document.storageKey);
+    const inspection = this.documentSecurity.inspect(content, document.mimeType, document.size);
+    await this.malware.assertClean(content, document.fileName, document.mimeType);
+    document.sha256 = inspection.sha256;
+    document.status = 'verified';
+    const saved = await repository.save(document);
+    await this.writeAudit(u, 'platform.vendor.document_added', 'organization_document', documentId, { vendorId, type: saved.type, fileName: saved.fileName });
+    const { storageKey: _storageKey, sha256: _sha256, ...safeDocument } = saved;
+    return safeDocument;
   }
   async createVendorLogoUpload(vendorId: string, fileName: string) {
     await this.vendor(vendorId);
