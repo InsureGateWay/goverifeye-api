@@ -151,6 +151,7 @@ export class PlatformGenerateCodeService {
     const batch = generated.batch;
 
     return {
+      mode: 'assigned' as const,
       labels: dto.labels,
       quantity: dto.quantity,
       vendorId: dto.vendorId,

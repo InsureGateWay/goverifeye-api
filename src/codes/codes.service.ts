@@ -170,6 +170,15 @@ export class CodesService {
       inventoryBatchId: inventory.id,
       expiresAt: new Date(Date.now() + EMAIL_OTP_TTL_MS),
     }));
+    await this.dataSource.getRepository(AuditLogEntity).save({
+      organizationId: user.organizationId,
+      actorId: user.userId,
+      action: 'open_market_batch.claim_started',
+      resourceType: 'open_market_batch',
+      resourceId: inventory.id,
+      status: 'success',
+      metadata: { publicBatchId: inventory.publicBatchId, claimId: claim.id },
+    });
     return {
       claimId: claim.id,
       batch: {
@@ -201,7 +210,7 @@ export class CodesService {
         status: ProductStatus.Active,
       }),
     ]);
-    if (!claim || claim.expiresAt.getTime() <= Date.now()) {
+    if (!claim || (claim.expiresAt.getTime() <= Date.now() && !claim.otpHash)) {
       throw new DomainError('The Open Market claim has expired', 'OPEN_MARKET_CLAIM_EXPIRED', 400);
     }
     if (!account || account.role !== 'vendor_admin' || !product) {
@@ -231,6 +240,15 @@ export class CodesService {
         to: account.email,
         ...content,
       });
+      await manager.save(AuditLogEntity, manager.create(AuditLogEntity, {
+        organizationId: user.organizationId,
+        actorId: user.userId,
+        action: 'open_market_batch.otp_requested',
+        resourceType: 'open_market_claim',
+        resourceId: claim.id,
+        status: 'success',
+        metadata: { inventoryBatchId: claim.inventoryBatchId, productId: product.id },
+      }));
     });
     return {
       claimId: claim.id,
@@ -257,6 +275,15 @@ export class CodesService {
     candidate.attempts += 1;
     if (!await argon2.verify(candidate.otpHash, dto.code)) {
       await claimRepository.save(candidate);
+      await this.dataSource.getRepository(AuditLogEntity).save({
+        organizationId: user.organizationId,
+        actorId: user.userId,
+        action: 'open_market_batch.otp_failed',
+        resourceType: 'open_market_claim',
+        resourceId: candidate.id,
+        status: 'failed',
+        metadata: { inventoryBatchId: candidate.inventoryBatchId, attempt: candidate.attempts },
+      });
       throw new DomainError('The verification code is invalid or expired', 'OPEN_MARKET_OTP_INVALID', 400);
     }
 
@@ -307,14 +334,24 @@ export class CodesService {
       }
 
       const now = new Date();
-      const lot = await manager.save(
-        ProductBatchEntity,
-        manager.create(ProductBatchEntity, {
-          organizationId: user.organizationId,
-          productId: product.id,
-          lotReference: `OPEN-${inventory.publicBatchId.replace(/\D/g, '')}`,
-        }),
-      );
+      const lotReference = dto.productBatchReference?.trim() || `OPEN-${inventory.publicBatchId.replace(/\D/g, '')}`;
+      let lot = await manager.findOneBy(ProductBatchEntity, {
+        organizationId: user.organizationId,
+        productId: product.id,
+        lotReference,
+      });
+      if (!lot) {
+        lot = await manager.save(
+          ProductBatchEntity,
+          manager.create(ProductBatchEntity, {
+            organizationId: user.organizationId,
+            productId: product.id,
+            lotReference,
+            manufacturingDate: dto.manufacturingDate,
+            expiryDate: dto.expiryDate,
+          }),
+        );
+      }
       const inventoryProduct = await manager.findOneBy(ProductEntity, {
         id: batch.productId,
         organizationId: batch.organizationId,
@@ -359,7 +396,7 @@ export class CodesService {
         resourceType: 'code_batch',
         resourceId: batch.id,
         status: 'success',
-        metadata: { inventoryBatchId: inventory.id, publicBatchId: inventory.publicBatchId },
+        metadata: { inventoryBatchId: inventory.id, publicBatchId: inventory.publicBatchId, productId: product.id, productBatchId: lot.id, lotReference },
       }));
       const activatedBy = await manager.findOneBy(UserEntity, {
         id: user.userId,

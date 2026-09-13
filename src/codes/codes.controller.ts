@@ -5,7 +5,7 @@ import { Body, Controller, Get, Headers, HttpCode, Param, Post, Req, Res } from 
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Public } from '../auth/public.decorator';
 import { CurrentUser, RequestContext } from '../common/request-context';
-import { BatchQueryDto, CodeDetailsQueryDto, CodeQueryDto, GenerateBatchDto, VerifyProductCodeDto } from './code.dto'; import { Query } from '@nestjs/common';
+import { BatchQueryDto, CodeDetailsQueryDto, CodeQueryDto, GenerateBatchDto, OpenMarketLinkDto, OpenMarketLookupDto, OpenMarketVerifyDto, VerifyProductCodeDto } from './code.dto'; import { Query } from '@nestjs/common';
 import { CodesService } from './codes.service';
 import { Throttle } from '@nestjs/throttler';
 import { RequiresActivatedOrganization } from '../common/organization-activation.guard';
@@ -17,6 +17,12 @@ function requestCookie(request:Request,name:string){const raw=request.headers.co
 export class CodesController {
   constructor(private readonly codes: CodesService,private readonly scanIdentity:ScanIdentityService,private readonly activation:BatchActivationService) {}
   @RequiresActivatedOrganization() @Post() generate(@CurrentUser() user: RequestContext,@Headers('idempotency-key')key:string|undefined,@Body() dto: GenerateBatchDto) { return this.codes.generateBatch(user.organizationId, user.userId, dto,key); }
+  @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin) @Throttle({default:{limit:5,ttl:60000}}) @Post('open-market/lookup') @HttpCode(200)
+  openMarketLookup(@CurrentUser()user:RequestContext,@Body()dto:OpenMarketLookupDto){return this.codes.openMarketLookup(user,dto)}
+  @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin) @Throttle({default:{limit:5,ttl:60000}}) @Post('open-market/:claimId/link') @HttpCode(200)
+  openMarketLink(@CurrentUser()user:RequestContext,@Param('claimId')claimId:string,@Body()dto:OpenMarketLinkDto){return this.codes.openMarketLink(user,claimId,dto)}
+  @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin) @Throttle({default:{limit:10,ttl:60000}}) @Post('open-market/:claimId/verify') @HttpCode(200)
+  openMarketVerify(@CurrentUser()user:RequestContext,@Param('claimId')claimId:string,@Body()dto:OpenMarketVerifyDto){return this.codes.openMarketVerify(user,claimId,dto)}
   @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin) @Post(':id/activation-pin/reveal') @HttpCode(200)
   revealPin(@CurrentUser()user:RequestContext,@Param('id')id:string,@Body()dto:RevealBatchPinDto,@Req()request:Request,@Res({passthrough:true})response:Response){
     response.set({'Cache-Control':'no-store, private','Pragma':'no-cache'});
