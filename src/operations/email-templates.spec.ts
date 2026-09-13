@@ -1,4 +1,4 @@
-import { invitationEmail, passwordResetCodeEmail, platformVendorDecisionEmail, platformVendorOnboardingSubmittedEmail, vendorOnboardingSubmittedEmail, vendorRejectedEmail, vendorVerifiedEmail, verificationCodeEmail } from './email-templates';
+import { invitationEmail, passwordResetCodeEmail, platformVendorDecisionEmail, platformVendorOnboardingSubmittedEmail, vendorChangeRequestDecisionEmail, vendorOnboardingSubmittedEmail, vendorRejectedEmail, vendorVerifiedEmail, verificationCodeEmail } from './email-templates';
 
 describe('email templates', () => {
   it('renders a branded verification email with a plain-text fallback', () => {
@@ -102,6 +102,24 @@ describe('email templates', () => {
     expect(email.subject).toContain('was approved by Pat Admin');
     expect(email.text).toContain('platform admin');
     expect(email.html).toContain('View vendor record');
+  });
+
+  it('tells the vendor that an approved profile value was applied', () => {
+    const email = vendorChangeRequestDecisionEmail({
+      firstName: 'Ada',
+      companyName: 'Example & Sons',
+      decision: 'approved',
+      reference: 'CR-12345678',
+      fieldLabel: 'Legal business name',
+      previousValue: 'Example & Sons',
+      proposedValue: 'Example & Sons Limited',
+      notes: '<CAC verified>',
+      profileUrl: 'https://app.example/dashboard/profile',
+    });
+    expect(email.subject).toContain('CR-12345678');
+    expect(email.text).toContain('has been applied');
+    expect(email.html).toContain('&lt;CAC verified&gt;');
+    expect(email.html).toContain('View company profile');
   });
 
   it('renders a single-use password reset code email', () => {

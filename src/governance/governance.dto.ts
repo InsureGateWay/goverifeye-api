@@ -6,11 +6,13 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 export class CreateChangeRequestDto {
   @IsString() @Length(2, 100) category!: string;
   @IsString() @Length(3, 4000) details!: string;
-  @IsOptional() @IsObject() requestedChanges?: Record<string, unknown>;
+  @IsDefined() @IsObject() requestedChanges!: Record<string, unknown>;
 }
 export class ReviewChangeRequestDto {
   @IsIn(['approved', 'rejected']) status!: string;
   @IsOptional() @IsString() @Length(1, 4000) notes?: string;
+  @IsOptional() @IsString() @Length(2, 100) field?: string;
+  @IsOptional() @IsString() @Length(1, 4000) proposedValue?: string;
 }
 export class ChangeRequestQueryDto extends PageQueryDto {
   @IsOptional() @IsIn(['pending','approved','rejected']) status?: string;

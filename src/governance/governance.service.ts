@@ -12,7 +12,7 @@ import { toOrder } from '../common/page-query.dto';
 import { VerificationCodeEntity, VerificationCodeStatus, VerificationEventEntity } from '../codes/code.entity';
 import { ASSIGNED_BATCH_PLACEHOLDER_PRODUCT } from '../codes/internal-products';
 import { OrganizationDocumentEntity, OrganizationEntity } from '../onboarding/onboarding.entity';
-import { AuditLogEntity } from '../operations/operations.entity';
+import { AuditLogEntity, NotificationEntity } from '../operations/operations.entity';
 import { auditDateBoundary, mapVendorAuditRowMetadata } from '../operations/audit-query.util';
 import { ApprovalDecisionEntity } from '../approvals/approval.entity';
 import { ProductEntity } from '../products/product.entity';
@@ -25,7 +25,12 @@ import { DocumentSecurityService } from '../onboarding/document-security.service
 import { MalwareScannerService } from '../onboarding/malware-scanner.service';
 import { ReliabilityService } from '../operations/reliability.service';
 import { EmailTemplateService } from '../operations/email-template.service';
-import { vendorAccountCreatedEmail } from '../operations/email-templates';
+import {
+  platformChangeRequestDecisionEmail,
+  platformChangeRequestSubmittedEmail,
+  vendorAccountCreatedEmail,
+  vendorChangeRequestDecisionEmail,
+} from '../operations/email-templates';
 import {
   AnomalyProcessingService,
   ANOMALY_DETECTION_CATALOG,
@@ -53,6 +58,62 @@ function age(value: Date): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
   return `${Math.floor(seconds / 86400)}d ${Math.floor((seconds % 86400) / 3600)}h`;
+}
+
+type ChangeRequestField =
+  | 'companyName'
+  | 'registrationNumber'
+  | 'industry'
+  | 'country'
+  | 'address.line1'
+  | 'address.city'
+  | 'address.state'
+  | 'address.lga'
+  | 'address.country'
+  | 'address.postalCode';
+
+const CHANGE_REQUEST_FIELDS: Record<ChangeRequestField, { label: string; category: string; min: number; max: number }> = {
+  companyName: { label: 'Legal business name', category: 'Organisation details', min: 2, max: 200 },
+  registrationNumber: { label: 'Registration number', category: 'Organisation details', min: 2, max: 100 },
+  industry: { label: 'Industry', category: 'Organisation details', min: 2, max: 200 },
+  country: { label: 'Country', category: 'Organisation details', min: 2, max: 100 },
+  'address.line1': { label: 'Registered address', category: 'Registered business address', min: 3, max: 300 },
+  'address.city': { label: 'City', category: 'Registered business address', min: 2, max: 100 },
+  'address.state': { label: 'State', category: 'Registered business address', min: 2, max: 100 },
+  'address.lga': { label: 'LGA', category: 'Registered business address', min: 2, max: 100 },
+  'address.country': { label: 'Address country', category: 'Registered business address', min: 2, max: 100 },
+  'address.postalCode': { label: 'Postal code', category: 'Registered business address', min: 2, max: 32 },
+};
+
+function changeRequestField(value: unknown): ChangeRequestField {
+  if (typeof value !== 'string' || !(value in CHANGE_REQUEST_FIELDS)) {
+    throw new DomainError('Select the exact profile field that needs to change', 'CHANGE_REQUEST_FIELD_INVALID', 400);
+  }
+  return value as ChangeRequestField;
+}
+
+function changeRequestValue(value: unknown, field: ChangeRequestField): string {
+  if (typeof value !== 'string') throw new DomainError('Enter the proposed value', 'CHANGE_REQUEST_VALUE_INVALID', 400);
+  const proposed = value.trim(), rule = CHANGE_REQUEST_FIELDS[field];
+  if (proposed.length < rule.min || proposed.length > rule.max) {
+    throw new DomainError(`${rule.label} must be between ${rule.min} and ${rule.max} characters`, 'CHANGE_REQUEST_VALUE_INVALID', 400);
+  }
+  return proposed;
+}
+
+function organizationFieldValue(organization: OrganizationEntity, field: ChangeRequestField): string {
+  if (!field.startsWith('address.')) return String((organization as unknown as Record<string, unknown>)[field] ?? '');
+  const key = field.slice('address.'.length) as keyof OrganizationEntity['address'];
+  return String(organization.address?.[key] ?? '');
+}
+
+function applyOrganizationField(organization: OrganizationEntity, field: ChangeRequestField, value: string) {
+  if (!field.startsWith('address.')) {
+    (organization as unknown as Record<string, unknown>)[field] = value;
+    return;
+  }
+  const key = field.slice('address.'.length) as keyof OrganizationEntity['address'];
+  organization.address = { ...organization.address, [key]: value };
 }
 const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 function base32Encode(input: Buffer): string {
@@ -113,11 +174,29 @@ export class GovernanceService {
     }
     return this.db.transaction(async (manager) => {
       const repo = manager.getRepository(OrganizationChangeRequestEntity);
+      const organization = await manager.getRepository(OrganizationEntity).findOne({
+        where: { id: u.organizationId },
+        lock: { mode: 'pessimistic_read' },
+      });
+      if (!organization) throw new DomainError('Company was not found', 'COMPANY_NOT_FOUND', 404);
+      const field = changeRequestField(dto.requestedChanges?.field);
+      const proposedValue = changeRequestValue(dto.requestedChanges?.proposedValue, field);
+      const rule = CHANGE_REQUEST_FIELDS[field];
+      const currentValue = organizationFieldValue(organization, field);
+      if (currentValue.trim() === proposedValue) {
+        throw new DomainError('The proposed value is already on the company profile', 'CHANGE_REQUEST_NO_CHANGE', 409);
+      }
+      const pending = await repo.createQueryBuilder('request')
+        .where('request.organizationId = :organizationId', { organizationId: u.organizationId })
+        .andWhere('request.status = :status', { status: 'pending' })
+        .andWhere("request.requestedChanges ->> 'field' = :field", { field })
+        .getOne();
+      if (pending) throw new DomainError('A request for this profile field is already pending', 'CHANGE_REQUEST_ALREADY_PENDING', 409);
       const row = repo.create(this.audit(u, {
         organizationId: u.organizationId,
-        category: dto.category.trim(),
+        category: rule.category,
         details: dto.details.trim(),
-        requestedChanges: dto.requestedChanges ?? {},
+        requestedChanges: { field, fieldLabel: rule.label, currentValue, proposedValue },
       }));
       const saved = await repo.save(row);
       const reference = `CR-${saved.id.slice(0, 8).toUpperCase()}`;
@@ -136,6 +215,41 @@ export class GovernanceService {
           sessionId: u.sessionId,
         },
       }));
+      const appUrl = (process.env.APP_PUBLIC_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
+      const superAdmins = await manager.find(UserEntity, {
+        where: { role: UserRole.SuperAdmin, isActive: true },
+        order: { createdAt: 'ASC' },
+      });
+      for (const recipient of superAdmins) {
+        const variables = {
+          firstName: recipient.firstName,
+          companyName: organization.companyName,
+          vendorEmail: u.email || organization.administrator?.email || 'Not available',
+          reference,
+          fieldLabel: rule.label,
+          currentValue: currentValue || 'Not provided',
+          proposedValue,
+          details: saved.details,
+          reviewUrl: `${appUrl}/admin/change-requests`,
+        };
+        const content = await this.emailTemplates.render(
+          manager,
+          'platform.change_request_submitted',
+          variables,
+          () => platformChangeRequestSubmittedEmail(variables),
+        );
+        await this.reliability.enqueue(manager, 'email.send', 'change-request-submitted', `${saved.id}:${recipient.id}`, {
+          to: recipient.email,
+          ...content,
+        });
+        await manager.save(NotificationEntity, manager.create(NotificationEntity, {
+          organizationId: recipient.organizationId,
+          userId: recipient.id,
+          type: 'change_request',
+          title: `Profile change requested by ${organization.companyName}`,
+          message: `${reference}: ${rule.label} from “${currentValue || 'Not provided'}” to “${proposedValue}”.`,
+        }));
+      }
       return { id: saved.id, reference, status: saved.status, message: 'Your change request has been submitted.' };
     });
   }
@@ -272,35 +386,182 @@ export class GovernanceService {
   async optionHistoryList(id:string){return this.db.getRepository(ApplicationOptionHistoryEntity).find({where:{optionId:id},order:{createdAt:'DESC'},take:100});}
   async listChangeRequests(q: ChangeRequestQueryDto) {
     const repo = this.db.getRepository(OrganizationChangeRequestEntity);
-    const where: any = {
-      ...(q.status ? { status: q.status } : {}),
-      ...(q.organizationId ? { organizationId: q.organizationId } : {}),
-      ...(q.search ? { details: ILike(`%${q.search}%`) } : {}),
-    };
-    const [rows, total] = await repo.findAndCount({
-      where,
-      order: { createdAt: 'DESC' },
-      skip: (q.page - 1) * q.pageSize,
-      take: q.pageSize,
-    });
+    const qb = repo.createQueryBuilder('request')
+      .leftJoin(OrganizationEntity, 'organization', 'organization.id = request.organizationId');
+    if (q.status) qb.andWhere('request.status = :status', { status: q.status });
+    if (q.organizationId) qb.andWhere('request.organizationId = :organizationId', { organizationId: q.organizationId });
+    if (q.search?.trim()) {
+      const search = `%${q.search.trim()}%`;
+      const reference = q.search.trim().replace(/^CR-/i, '');
+      qb.andWhere(new Brackets((where) => where
+        .where('request.details ILIKE :search', { search })
+        .orWhere('request.category ILIKE :search', { search })
+        .orWhere('organization.companyName ILIKE :search', { search })
+        .orWhere('CAST(request.id AS TEXT) ILIKE :reference', { reference: `${reference}%` })));
+    }
+    const [rows, total] = await qb.orderBy('request.createdAt', 'DESC')
+      .skip((q.page - 1) * q.pageSize)
+      .take(q.pageSize)
+      .getManyAndCount();
     // Sheet2 #36 — include vendor name for Admin review queue.
     const orgIds = [...new Set(rows.map((row) => row.organizationId))];
     const orgs = orgIds.length
       ? await this.db.getRepository(OrganizationEntity).find({ where: { id: In(orgIds) } })
       : [];
-    const names = new Map(orgs.map((org) => [org.id, org.companyName]));
+    const organizations = new Map(orgs.map((org) => [org.id, org]));
     const items = rows.map((row) => ({
       ...row,
       reference: `CR-${row.id.slice(0, 8).toUpperCase()}`,
-      vendorName: names.get(row.organizationId) || 'Organization',
-      category:
-        typeof row.requestedChanges?.category === 'string'
-          ? row.requestedChanges.category
-          : 'Other',
+      vendorName: organizations.get(row.organizationId)?.companyName || 'Organization',
+      category: row.category || 'Other',
+      currentValues: organizations.get(row.organizationId)
+        ? Object.fromEntries((Object.keys(CHANGE_REQUEST_FIELDS) as ChangeRequestField[]).map((field) => [
+            field,
+            organizationFieldValue(organizations.get(row.organizationId)!, field),
+          ]))
+        : {},
     }));
     return pageOf(items, total, q.page, q.pageSize, 'createdAt', 'desc');
   }
-  async reviewChangeRequest(u:RequestContext,id:string,status:string,notes?:string){const repo=this.db.getRepository(OrganizationChangeRequestEntity),row=await repo.findOneBy({id});if(!row)throw new DomainError('Change request was not found','CHANGE_REQUEST_NOT_FOUND',404);if(row.status!=='pending')throw new DomainError('Change request has already been reviewed','CHANGE_REQUEST_STATE_INVALID',409);Object.assign(row,{status,reviewNotes:notes,reviewedById:u.userId,reviewedAt:new Date(),updatedById:u.userId});await repo.save(row);await this.writeAudit(u,`organization.change_request.${status}`,'organization_change_request',id,{notes});return row;}
+  async reviewChangeRequest(u: RequestContext, id: string, status: string, notes?: string, fieldOverride?: string, proposedValueOverride?: string) {
+    return this.db.transaction(async (manager) => {
+      const repo = manager.getRepository(OrganizationChangeRequestEntity);
+      const row = await repo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+      if (!row) throw new DomainError('Change request was not found', 'CHANGE_REQUEST_NOT_FOUND', 404);
+      if (row.status !== 'pending') throw new DomainError('Change request has already been reviewed', 'CHANGE_REQUEST_STATE_INVALID', 409);
+      const organizationRepo = manager.getRepository(OrganizationEntity);
+      const organization = await organizationRepo.findOne({ where: { id: row.organizationId }, lock: { mode: 'pessimistic_write' } });
+      if (!organization) throw new DomainError('Company was not found', 'COMPANY_NOT_FOUND', 404);
+      const reference = `CR-${row.id.slice(0, 8).toUpperCase()}`;
+      let field: ChangeRequestField | null = null;
+      let fieldLabel = row.category;
+      let previousValue = '';
+      let proposedValue = '';
+      if (status === 'rejected' && !notes?.trim()) {
+        throw new DomainError('Review notes are required when rejecting a change request', 'CHANGE_REQUEST_REJECTION_NOTES_REQUIRED', 400);
+      }
+      if (status === 'approved') {
+        const storedField = row.requestedChanges?.field;
+        const isStructured = typeof storedField === 'string' && typeof row.requestedChanges?.currentValue === 'string';
+        field = changeRequestField(isStructured ? storedField : fieldOverride);
+        proposedValue = changeRequestValue(
+          isStructured ? row.requestedChanges?.proposedValue : (proposedValueOverride ?? row.requestedChanges?.proposedValue),
+          field,
+        );
+        fieldLabel = CHANGE_REQUEST_FIELDS[field].label;
+        previousValue = organizationFieldValue(organization, field);
+        const capturedValue = row.requestedChanges?.currentValue;
+        if (typeof capturedValue === 'string' && capturedValue !== previousValue) {
+          throw new DomainError('The company profile changed after this request was submitted. Reject it and ask the vendor to submit a new request.', 'CHANGE_REQUEST_PROFILE_CHANGED', 409);
+        }
+        if (field === 'companyName' && await organizationRepo.existsBy({ companyName: proposedValue, id: Not(organization.id) })) {
+          throw new DomainError('That company name is already registered', 'COMPANY_NAME_EXISTS', 409);
+        }
+        if (field === 'registrationNumber' && await organizationRepo.existsBy({ registrationNumber: proposedValue, id: Not(organization.id) })) {
+          throw new DomainError('That registration number is already registered', 'REGISTRATION_NUMBER_EXISTS', 409);
+        }
+        applyOrganizationField(organization, field, proposedValue);
+        await organizationRepo.save(organization);
+        row.category = CHANGE_REQUEST_FIELDS[field].category;
+        row.requestedChanges = { field, fieldLabel, currentValue: previousValue, proposedValue };
+      } else {
+        const rawField = row.requestedChanges?.field;
+        if (typeof rawField === 'string' && rawField in CHANGE_REQUEST_FIELDS) {
+          field = rawField as ChangeRequestField;
+          fieldLabel = CHANGE_REQUEST_FIELDS[field].label;
+          previousValue = String(row.requestedChanges?.currentValue ?? '');
+          proposedValue = String(row.requestedChanges?.proposedValue ?? '');
+        }
+      }
+      const reviewNotes = notes?.trim() || undefined;
+      Object.assign(row, { status, reviewNotes, reviewedById: u.userId, reviewedAt: new Date(), updatedById: u.userId });
+      const saved = await repo.save(row);
+      await manager.save(AuditLogEntity, manager.create(AuditLogEntity, {
+        organizationId: row.organizationId,
+        actorId: u.userId,
+        action: `organization.change_request.${status}`,
+        resourceType: 'organization_change_request',
+        resourceId: id,
+        status: 'success',
+        metadata: { reference, field, fieldLabel, previousValue, proposedValue, applied: status === 'approved', notes: reviewNotes, sessionId: u.sessionId },
+      }));
+
+      const appUrl = (process.env.APP_PUBLIC_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
+      const vendorAdmins = await manager.find(UserEntity, {
+        where: { organizationId: row.organizationId, role: UserRole.VendorAdmin, isActive: true },
+        order: { createdAt: 'ASC' },
+      });
+      const vendorRecipients = vendorAdmins.length
+        ? vendorAdmins.map((recipient) => ({ id: recipient.id, organizationId: recipient.organizationId, email: recipient.email, firstName: recipient.firstName }))
+        : organization.administrator?.email
+          ? [{ id: 'primary-contact', organizationId: organization.id, email: organization.administrator.email, firstName: organization.administrator.firstName }]
+          : [];
+      for (const recipient of vendorRecipients) {
+        const variables = {
+          firstName: recipient.firstName,
+          companyName: organization.companyName,
+          decision: status as 'approved' | 'rejected',
+          reference,
+          fieldLabel,
+          previousValue: previousValue || 'Not provided',
+          proposedValue: proposedValue || 'Not provided',
+          notes: reviewNotes || 'No review notes were provided.',
+          profileUrl: `${appUrl}/dashboard/profile`,
+        };
+        const content = await this.emailTemplates.render(
+          manager,
+          `vendor.change_request_${status}`,
+          variables,
+          () => vendorChangeRequestDecisionEmail(variables),
+        );
+        await this.reliability.enqueue(manager, 'email.send', `change-request-${status}`, `${row.id}:${recipient.id}`, { to: recipient.email, ...content });
+        if (recipient.id !== 'primary-contact') {
+          await manager.save(NotificationEntity, manager.create(NotificationEntity, {
+            organizationId: recipient.organizationId,
+            userId: recipient.id,
+            type: 'change_request',
+            title: `Profile change request ${status}`,
+            message: `${reference}: ${fieldLabel} was ${status}${status === 'approved' ? ' and applied' : ''}.`,
+          }));
+        }
+      }
+
+      const superAdmins = await manager.find(UserEntity, {
+        where: { role: UserRole.SuperAdmin, isActive: true },
+        order: { createdAt: 'ASC' },
+      });
+      const reviewerName = u.name?.trim() || u.email || u.userId;
+      for (const recipient of superAdmins.filter((item) => item.id !== u.userId)) {
+          const variables = {
+            firstName: recipient.firstName,
+            companyName: organization.companyName,
+            decision: status as 'approved' | 'rejected',
+            reference,
+            fieldLabel,
+            reviewerName,
+            reviewerEmail: u.email || 'Not available',
+            reviewerRole: u.role.replaceAll('_', ' '),
+            notes: reviewNotes || 'No review notes were provided.',
+            reviewUrl: `${appUrl}/admin/change-requests`,
+          };
+          const content = await this.emailTemplates.render(
+            manager,
+            `platform.change_request_${status}_by_other_reviewer`,
+            variables,
+            () => platformChangeRequestDecisionEmail(variables),
+          );
+          await this.reliability.enqueue(manager, 'email.send', `platform-change-request-${status}`, `${row.id}:${recipient.id}`, { to: recipient.email, ...content });
+          await manager.save(NotificationEntity, manager.create(NotificationEntity, {
+            organizationId: recipient.organizationId,
+            userId: recipient.id,
+            type: 'change_request',
+            title: `Profile change request ${status} by ${reviewerName}`,
+            message: `${reference}: ${fieldLabel} for ${organization.companyName} was ${status}.`,
+          }));
+      }
+      return { ...saved, applied: status === 'approved' };
+    });
+  }
 
   async listProducts(q: PlatformProductQueryDto) {
     const repo = this.db.getRepository(ProductEntity);

@@ -70,7 +70,17 @@ import { AuditLogEntity, NotificationEntity } from './operations.entity'; import
     // Sheet1 #3 — Vendor Staff may view company account but must not edit it.
     if(u.role!==UserRole.VendorAdmin&&u.role!=='vendor_admin')throw new DomainError('Only a Vendor Admin can update company account details','COMPANY_UPDATE_FORBIDDEN',403);
     const repo=this.db.getRepository(OrganizationEntity); const row=await repo.findOneBy({id:u.organizationId}); if(!row) throw new DomainError('Company was not found','COMPANY_NOT_FOUND',404);
-    const{contactEmail,contactPhone,...company}=dto;Object.assign(row,company);if(contactEmail!==undefined||contactPhone!==undefined)row.administrator={...row.administrator,...(contactEmail!==undefined?{email:contactEmail}:{}),...(contactPhone!==undefined?{phone:contactPhone}:{})};return repo.save(row);
+    const protectedFieldChanged =
+      dto.companyName.trim() !== row.companyName ||
+      dto.industry.trim() !== row.industry ||
+      dto.country.trim() !== row.country ||
+      (dto.address && (['line1','city','state','lga','country','postalCode'] as const).some((key) =>
+        String(dto.address?.[key] ?? '').trim() !== String(row.address?.[key] ?? '').trim()));
+    if(protectedFieldChanged)throw new DomainError('Protected company details must be submitted through a change request','COMPANY_CHANGE_REQUEST_REQUIRED',403);
+    row.website=dto.website?.trim()||undefined;
+    const{contactEmail,contactPhone}=dto;
+    if(contactEmail!==undefined||contactPhone!==undefined)row.administrator={...row.administrator,...(contactEmail!==undefined?{email:contactEmail.trim().toLowerCase()}:{}),...(contactPhone!==undefined?{phone:contactPhone.trim()}:{})};
+    return repo.save(row);
   }
   async changePassword(organizationId:string,userId:string,dto:ChangePasswordDto){ const repo=this.db.getRepository(UserEntity); const user=await repo.findOneBy({id:userId,organizationId,isActive:true}); if(!user||!await argon2.verify(user.passwordHash,dto.currentPassword)) throw new DomainError('Current password is incorrect','INVALID_PASSWORD',401); user.passwordHash=await argon2.hash(dto.newPassword,{type:argon2.argon2id}); user.mustChangePassword=false; await repo.save(user); await this.audit(organizationId,userId,'password.changed','user',userId); return {changed:true}; }
   async deactivate(organizationId:string,userId:string){ return this.db.transaction(async manager=>{const repo=manager.getRepository(UserEntity);const user=await repo.findOneBy({id:userId,organizationId});if(!user)throw new DomainError('Profile was not found','PROFILE_NOT_FOUND',404);if(user.role==='vendor_admin'&&await repo.countBy({organizationId,role:'vendor_admin',isActive:true})<=1)throw new DomainError('The final active administrator cannot deactivate their account','FINAL_ADMIN_REQUIRED',409);user.isActive=false;await repo.save(user);await manager.getRepository(AuditLogEntity).save({organizationId,actorId:userId,action:'account.deactivated',resourceType:'user',resourceId:userId,status:'success'});await manager.getRepository(UserEntity);return{deactivated:true}}); }

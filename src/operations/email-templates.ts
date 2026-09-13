@@ -417,6 +417,138 @@ View the vendor record: ${input.vendorUrl}`,
   };
 }
 
+export function platformChangeRequestSubmittedEmail(input: {
+  firstName?: string;
+  companyName: string;
+  vendorEmail: string;
+  reference: string;
+  fieldLabel: string;
+  currentValue: string;
+  proposedValue: string;
+  details: string;
+  reviewUrl: string;
+}): EmailContent {
+  const name = displayName(input.firstName);
+  const greeting = name ? `Hi ${name},` : 'Hello,';
+  return {
+    subject: `${input.companyName} requested a profile change (${input.reference})`,
+    text: `${greeting}
+
+${input.companyName} submitted a vendor profile change request.
+
+Reference: ${input.reference}
+Requested by: ${input.vendorEmail}
+Field: ${input.fieldLabel}
+Current value: ${input.currentValue}
+Proposed value: ${input.proposedValue}
+Details: ${input.details}
+
+Review the request: ${input.reviewUrl}`,
+    html: layout({
+      preheader: `${input.companyName} submitted profile change request ${input.reference}.`,
+      eyebrow: 'Vendor profile change',
+      heading: 'A profile change is ready for review',
+      body: `<p style="margin:0 0 14px;font-size:16px;font-weight:600;color:${TEXT_PRIMARY}">${escapeHtml(greeting)}</p>
+<p style="margin:0 0 18px"><strong>${escapeHtml(input.companyName)}</strong> submitted a vendor profile change request.</p>
+<p style="margin:0 0 6px"><strong>Reference:</strong> ${escapeHtml(input.reference)}</p>
+<p style="margin:0 0 6px"><strong>Requested by:</strong> ${escapeHtml(input.vendorEmail)}</p>
+<p style="margin:0 0 6px"><strong>Field:</strong> ${escapeHtml(input.fieldLabel)}</p>
+<p style="margin:0 0 6px"><strong>Current value:</strong> ${escapeHtml(input.currentValue)}</p>
+<p style="margin:0 0 6px"><strong>Proposed value:</strong> ${escapeHtml(input.proposedValue)}</p>
+<p style="margin:12px 0 0"><strong>Details:</strong> ${escapeHtml(input.details)}</p>`,
+      action: { label: 'Review change request', url: input.reviewUrl },
+      notice: 'Approve only if the proposed value and supporting details are correct.',
+    }),
+  };
+}
+
+export function vendorChangeRequestDecisionEmail(input: {
+  firstName?: string;
+  companyName: string;
+  decision: 'approved' | 'rejected';
+  reference: string;
+  fieldLabel: string;
+  previousValue: string;
+  proposedValue: string;
+  notes: string;
+  profileUrl: string;
+}): EmailContent {
+  const name = displayName(input.firstName);
+  const greeting = name ? `Hi ${name},` : 'Hello,';
+  const approved = input.decision === 'approved';
+  return {
+    subject: `${input.reference} was ${input.decision}`,
+    text: `${greeting}
+
+Your profile change request for ${input.companyName} was ${input.decision}.${approved ? ' The approved value has been applied to the company profile.' : ''}
+
+Reference: ${input.reference}
+Field: ${input.fieldLabel}
+Previous value: ${input.previousValue}
+Proposed value: ${input.proposedValue}
+Review notes: ${input.notes}
+
+View profile history: ${input.profileUrl}`,
+    html: layout({
+      preheader: `Profile change request ${input.reference} was ${input.decision}.`,
+      eyebrow: 'Profile change decision',
+      heading: approved ? 'Your profile change was approved' : 'Your profile change was rejected',
+      body: `<p style="margin:0 0 14px;font-size:16px;font-weight:600;color:${TEXT_PRIMARY}">${escapeHtml(greeting)}</p>
+<p style="margin:0 0 18px">Your profile change request for <strong>${escapeHtml(input.companyName)}</strong> was <strong>${escapeHtml(input.decision)}</strong>.${approved ? ' The approved value has been applied to the company profile.' : ''}</p>
+<p style="margin:0 0 6px"><strong>Reference:</strong> ${escapeHtml(input.reference)}</p>
+<p style="margin:0 0 6px"><strong>Field:</strong> ${escapeHtml(input.fieldLabel)}</p>
+<p style="margin:0 0 6px"><strong>Previous value:</strong> ${escapeHtml(input.previousValue)}</p>
+<p style="margin:0 0 6px"><strong>Proposed value:</strong> ${escapeHtml(input.proposedValue)}</p>
+<p style="margin:12px 0 0"><strong>Review notes:</strong> ${escapeHtml(input.notes)}</p>`,
+      action: { label: 'View company profile', url: input.profileUrl },
+      notice: approved
+        ? 'The audit trail records the previous value, approved value, reviewer, and decision time.'
+        : 'Submit a new request if you want the review team to consider a revised value.',
+    }),
+  };
+}
+
+export function platformChangeRequestDecisionEmail(input: {
+  firstName?: string;
+  companyName: string;
+  decision: 'approved' | 'rejected';
+  reference: string;
+  fieldLabel: string;
+  reviewerName: string;
+  reviewerEmail: string;
+  reviewerRole: string;
+  notes: string;
+  reviewUrl: string;
+}): EmailContent {
+  const name = displayName(input.firstName);
+  const greeting = name ? `Hi ${name},` : 'Hello,';
+  return {
+    subject: `${input.reference} was ${input.decision} by ${input.reviewerName}`,
+    text: `${greeting}
+
+${input.reviewerName} (${input.reviewerRole}, ${input.reviewerEmail}) ${input.decision} a profile change request for ${input.companyName}.
+
+Reference: ${input.reference}
+Field: ${input.fieldLabel}
+Review notes: ${input.notes}
+
+View the request: ${input.reviewUrl}`,
+    html: layout({
+      preheader: `${input.reference} was ${input.decision} by ${input.reviewerName}.`,
+      eyebrow: 'Profile change review activity',
+      heading: `Profile change request ${input.decision}`,
+      body: `<p style="margin:0 0 14px;font-size:16px;font-weight:600;color:${TEXT_PRIMARY}">${escapeHtml(greeting)}</p>
+<p style="margin:0 0 18px"><strong>${escapeHtml(input.reviewerName)}</strong> (${escapeHtml(input.reviewerRole)}) ${escapeHtml(input.decision)} a profile change request for <strong>${escapeHtml(input.companyName)}</strong>.</p>
+<p style="margin:0 0 6px"><strong>Reference:</strong> ${escapeHtml(input.reference)}</p>
+<p style="margin:0 0 6px"><strong>Field:</strong> ${escapeHtml(input.fieldLabel)}</p>
+<p style="margin:0 0 6px"><strong>Reviewer email:</strong> ${escapeHtml(input.reviewerEmail)}</p>
+<p style="margin:12px 0 0"><strong>Review notes:</strong> ${escapeHtml(input.notes)}</p>`,
+      action: { label: 'View change requests', url: input.reviewUrl },
+      notice: 'This notification was sent because you were not the reviewer for this decision.',
+    }),
+  };
+}
+
 export function passwordResetCodeEmail(input: {
   firstName?: string;
   code: string;

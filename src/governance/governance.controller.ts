@@ -35,7 +35,7 @@ export class GovernanceController {
   @Post('settings/2fa/verify') verifyMfa(@CurrentUser()u:RequestContext,@Body()dto:MfaCodeDto){return this.service.verifyMfa(u,dto.code);}
   @Post('settings/2fa/disable') disableMfa(@CurrentUser()u:RequestContext,@Body()dto:MfaDisableDto){return this.service.disableMfa(u,dto.code,dto.password);}
   @Roles(UserRole.SuperAdmin) @Get('platform/change-requests') changeRequests(@Query()q:ChangeRequestQueryDto){return this.service.listChangeRequests(q);}
-  @Roles(UserRole.SuperAdmin) @Patch('platform/change-requests/:id') reviewChange(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:ReviewChangeRequestDto){return this.service.reviewChangeRequest(u,id,dto.status,dto.notes);}
+  @Roles(UserRole.SuperAdmin) @Patch('platform/change-requests/:id') reviewChange(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:ReviewChangeRequestDto){return this.service.reviewChangeRequest(u,id,dto.status,dto.notes,dto.field,dto.proposedValue);}
 
   @Roles(UserRole.SuperAdmin) @Get('platform/products/metrics') productMetrics(){return this.service.productMetrics();}
   @Roles(UserRole.SuperAdmin) @Get('platform/products') products(@Query()q:PlatformProductQueryDto){return this.service.listProducts(q);}
