@@ -12,6 +12,7 @@ import { Controller,Get,Param,Query,Res } from '@nestjs/common'; import { ApiBea
  @Get('dashboard/top-products') dashboardTop(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.topProducts(u.organizationId,q)}
  @Get('dashboard/locations') dashboardLocations(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.locations(u.organizationId,q)}
  @Get('dashboard/scan-events') dashboardEvents(@CurrentUser()u:RequestContext,@Query()q:ReportingQueryDto){return this.service.events(u.organizationId,q)}
+ @Get('dashboard/needs-attention') needsAttention(@CurrentUser()u:RequestContext){return this.service.needsAttention(u.organizationId)}
  @Get('products/:id/verification-events') productEvents(@CurrentUser()u:RequestContext,@Param('id')id:string,@Query()q:ReportingQueryDto){q.productId=id;return this.service.events(u.organizationId,q)}
  @Get('products/:id/suspicious-scans') productSuspicious(@CurrentUser()u:RequestContext,@Param('id')id:string,@Query()q:ReportingQueryDto){q.productId=id;return this.service.suspicious(u.organizationId,q)}
  @Get('products/:id/activity') productActivity(@CurrentUser()u:RequestContext,@Param('id')id:string,@Query()q:ReportingQueryDto){return this.service.productActivity(u.organizationId,id,q)}

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDateString, IsDefined, IsEmail, IsIn, IsInt, IsObject, IsOptional, IsString, IsUrl, IsUUID, Length, Max, MaxLength, Min } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsDateString, IsDefined, IsEmail, IsIn, IsInt, IsObject, IsOptional, IsString, IsUrl, IsUUID, Length, Max, MaxLength, Min } from 'class-validator';
 import { PageQueryDto } from '../common/page-query.dto';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -19,7 +19,7 @@ export class ChangeRequestQueryDto extends PageQueryDto {
   @IsOptional() @IsUUID() organizationId?: string;
 }
 export class PlatformProductQueryDto extends PageQueryDto {
-  @IsOptional() @IsIn(['active', 'pending', 'archived', 'rejected']) status?: string;
+  @IsOptional() @IsIn(['active', 'pending', 'information_required', 'recalled', 'archived', 'rejected']) status?: string;
   @IsOptional() @IsUUID() organizationId?: string;
   @IsIn(['createdAt', 'updatedAt', 'name', 'status', 'totalCodes', 'scanned']) override sortBy = 'updatedAt';
 }
@@ -28,8 +28,9 @@ export class PlatformProductDetailsQueryDto extends PageQueryDto {
   @IsOptional() @IsDateString() to?: string;
 }
 export class PlatformProductStatusDto {
-  @IsIn(['active', 'pending', 'archived', 'rejected']) status!: string;
+  @IsIn(['active', 'pending', 'information_required', 'recalled', 'archived', 'rejected']) status!: string;
   @IsOptional() @IsString() @Length(1, 4000) reason?: string;
+  @IsOptional() @IsArray() @ArrayMaxSize(30) @IsString({each:true}) requiredFields?: string[];
 }
 export class InviteVendorDto {
   @IsString() @Length(2, 200) vendorName!: string;

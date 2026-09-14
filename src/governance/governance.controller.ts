@@ -44,7 +44,7 @@ export class GovernanceController {
   @Roles(UserRole.SuperAdmin) @Get('platform/products/:id/approval-request') async productRequest(@Param('id')id:string){return {item:await this.service.product(id)};}
   @Roles(UserRole.SuperAdmin) @Get('platform/products/:id/details') productDetails(@Param('id')id:string,@Query()q:PlatformProductDetailsQueryDto){return this.service.productDetails(id,q);}
   @Roles(UserRole.SuperAdmin) @Get('platform/products/:id') product(@Param('id')id:string){return this.service.product(id);}
-  @Roles(UserRole.SuperAdmin) @Patch('platform/products/:id/status') productStatus(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:PlatformProductStatusDto){return this.service.setProductStatus(u,id,dto.status,dto.reason);}
+  @Roles(UserRole.SuperAdmin) @Patch('platform/products/:id/status') productStatus(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:PlatformProductStatusDto){return this.service.setProductStatus(u,id,dto.status,dto.reason,dto.requiredFields);}
   @Roles(UserRole.SuperAdmin) @Patch('platform/products/:id/archive') archiveProduct(@CurrentUser()u:RequestContext,@Param('id')id:string){return this.service.setProductStatus(u,id,'archived');}
   @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:vendorId/products/image-upload') createProductImageUploadForVendor(@Param('vendorId')vendorId:string,@Body()dto:CreateProductImageUploadDto){return this.service.createProductImageUploadForVendor(vendorId,dto.fileName);}
   @Roles(UserRole.SuperAdmin) @Post('platform/vendors/:vendorId/products/document-upload') createProductDocumentUploadForVendor(@Param('vendorId')vendorId:string,@Body()dto:CreateProductDocumentUploadDto){return this.service.createProductDocumentUploadForVendor(vendorId,dto.fileName);}
@@ -72,6 +72,10 @@ export class GovernanceController {
   @Roles(UserRole.SuperAdmin) @Post('platform/fraud-alerts') createFraud(@CurrentUser()u:RequestContext,@Body()dto:CreateFraudCaseDto){return this.service.createFraud(u,dto);}
   @Roles(UserRole.SuperAdmin) @Patch('platform/fraud-alerts/:id') updateFraud(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:UpdateFraudCaseDto){return this.service.updateFraud(u,id,dto);}
   @Roles(UserRole.SuperAdmin) @Post('platform/fraud-alerts/:id/notes') fraudNote(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:AddCaseNoteDto){return this.service.addFraudNote(u,id,dto);}
+  @Roles(UserRole.VendorAdmin,UserRole.VendorStaff) @Get('vendor/anomaly-cases') vendorFraud(@CurrentUser()u:RequestContext,@Query()q:FraudCaseQueryDto){return this.service.listVendorFraud(u.organizationId,q);}
+  @Roles(UserRole.VendorAdmin,UserRole.VendorStaff) @Get('vendor/anomaly-cases/:id') vendorFraudDetail(@CurrentUser()u:RequestContext,@Param('id')id:string){return this.service.vendorFraudDetail(u.organizationId,id);}
+  @Roles(UserRole.VendorAdmin) @Patch('vendor/anomaly-cases/:id') updateVendorFraud(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:UpdateFraudCaseDto){return this.service.updateVendorFraud(u,id,dto);}
+  @Roles(UserRole.VendorAdmin) @Post('vendor/anomaly-cases/:id/notes') vendorFraudNote(@CurrentUser()u:RequestContext,@Param('id')id:string,@Body()dto:AddCaseNoteDto){return this.service.addVendorFraudNote(u,id,dto);}
 
   @Roles(UserRole.SuperAdmin) @Get('platform/audit-exceptions') exceptions(@Query()q:AuditExceptionQueryDto){return this.service.listExceptions(q);}
   @Roles(UserRole.SuperAdmin) @Post('platform/audit-exceptions') createException(@CurrentUser()u:RequestContext,@Body()dto:CreateAuditExceptionDto){return this.service.createException(u,dto);}

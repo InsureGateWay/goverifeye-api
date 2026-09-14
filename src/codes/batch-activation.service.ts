@@ -128,7 +128,7 @@ export class BatchActivationService {
   }
 
   private async vendorAccess(manager: EntityManager, key: string, actor: RequestContext, source: string) {
-    if (actor.role !== 'vendor_admin') return this.reject(manager, actor, null, 'access_rejected', 'Vendor administrator authorization required', 'FORBIDDEN', 403);
+    if (!['vendor_admin','vendor_staff'].includes(actor.role)) return this.reject(manager, actor, null, 'access_rejected', 'Vendor activation authorization required', 'FORBIDDEN', 403);
     // A stable, sorted lock order serializes shared vendor/source counters across API instances.
     const scopes = [`vendor:${actor.organizationId}`, `source:${source || 'unknown'}`].map(value => createHash('sha256').update(value).digest('hex')).sort();
     const limits: BatchActivationLimitEntity[] = [];
@@ -156,7 +156,7 @@ export class BatchActivationService {
   private async stepUp(manager: EntityManager, actor: RequestContext, password?: string) {
     if (!password) return false;
     const user = await manager.findOneBy(UserEntity, { id: actor.userId, organizationId: actor.organizationId, isActive: true });
-    return Boolean(user && user.role === 'vendor_admin' && await argon2.verify(user.passwordHash, password));
+    return Boolean(user && ['vendor_admin','vendor_staff'].includes(user.role) && await argon2.verify(user.passwordHash, password));
   }
 
   private digest(batchId: string, pin: string, version: string) {

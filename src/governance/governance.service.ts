@@ -748,10 +748,15 @@ export class GovernanceService {
     if (!organization) throw new DomainError('Vendor was not found', 'VENDOR_NOT_FOUND', 404);
     return organization;
   }
-  async setProductStatus(u: RequestContext, id: string, status: string, reason?: string) {
+  async setProductStatus(u: RequestContext, id: string, status: string, reason?: string, requiredFields:string[]=[] ) {
     const repo = this.db.getRepository(ProductEntity), row = await repo.findOneBy({ id });
     if (!row) throw new DomainError('Product was not found', 'PRODUCT_NOT_FOUND', 404);
-    row.status = status as ProductStatus; row.rejectionReason = status === 'rejected' ? reason : undefined; if(status==='active')row.approvedBy=submittedBy(u); row.updatedAt = new Date();
+    if(status==='information_required'&&!reason?.trim())throw new DomainError('Explain what product information is required','PRODUCT_INFORMATION_REQUEST_REQUIRED',400);
+    row.status = status as ProductStatus;
+    row.rejectionReason = status === 'rejected' ? reason : undefined;
+    row.informationRequest = status === 'information_required' ? reason!.trim() : null;
+    row.infoRequiredFields = status === 'information_required' ? [...new Set(requiredFields.map((field)=>field.trim()).filter(Boolean))] : [];
+    if(status==='active')row.approvedBy=submittedBy(u); row.updatedAt = new Date();
     const saved = await repo.save(row);
     await this.writeAudit(u, 'platform.product.status_changed', 'product', id, { status, reason });
     return saved;
@@ -950,6 +955,35 @@ export class GovernanceService {
   async createFraud(u: RequestContext, dto: CreateFraudCaseDto) { const r=this.db.getRepository(FraudCaseEntity); return r.save(r.create(this.audit(u,{...dto,status:'open',signals:dto.signals??{}}))); }
   async updateFraud(u: RequestContext, id: string, dto: UpdateFraudCaseDto) { const r=this.db.getRepository(FraudCaseEntity), row=await r.findOneBy({id}); if(!row)throw new DomainError('Fraud case was not found','FRAUD_CASE_NOT_FOUND',404); Object.assign(row,dto,{updatedById:u.userId,...(dto.status==='resolved'?{resolvedAt:new Date()}: {})}); return r.save(row); }
   async addFraudNote(u:RequestContext,id:string,dto:AddCaseNoteDto){if(!await this.db.getRepository(FraudCaseEntity).existsBy({id}))throw new DomainError('Fraud case was not found','FRAUD_CASE_NOT_FOUND',404);const r=this.db.getRepository(FraudCaseNoteEntity);return r.save(r.create(this.audit(u,{caseId:id,body:dto.body,evidence:dto.evidence??[]})));}
+  async listVendorFraud(organizationId:string,q:FraudCaseQueryDto){
+    const repo=this.db.getRepository(FraudCaseEntity),qb=repo.createQueryBuilder('c').where('c.deletedAt IS NULL').andWhere('c.organizationId = :organizationId',{organizationId});
+    if(q.severity)qb.andWhere('c.severity = :severity',{severity:q.severity});
+    if(q.status)qb.andWhere('c.status = :status',{status:q.status});
+    if(q.category)qb.andWhere('c.category = :category',{category:q.category});
+    if(q.from)qb.andWhere('c.createdAt >= :from',{from:new Date(q.from)});
+    if(q.to)qb.andWhere('c.createdAt <= :to',{to:new Date(q.to)});
+    if(q.search)qb.andWhere(new Brackets((x)=>x.where('c.title ILIKE :s').orWhere('c.description ILIKE :s')),{s:`%${q.search}%`});
+    const sort=['createdAt','updatedAt','severity','status'].includes(q.sortBy)?q.sortBy:'createdAt';
+    qb.orderBy(`c.${sort}`,q.sortDirection.toUpperCase()as'ASC'|'DESC').addOrderBy('c.id',q.sortDirection.toUpperCase()as'ASC'|'DESC').skip((q.page-1)*q.pageSize).take(q.pageSize);
+    const[rows,total]=await qb.getManyAndCount();
+    return pageOf(rows,total,q.page,q.pageSize,q.sortBy,q.sortDirection);
+  }
+  async vendorFraudDetail(organizationId:string,id:string){
+    const row=await this.db.getRepository(FraudCaseEntity).findOneBy({id,organizationId});
+    if(!row)throw new DomainError('Anomaly case was not found','FRAUD_CASE_NOT_FOUND',404);
+    const notes=await this.db.getRepository(FraudCaseNoteEntity).find({where:{caseId:id},order:{createdAt:'ASC'}});
+    return{...row,notes};
+  }
+  async updateVendorFraud(u:RequestContext,id:string,dto:UpdateFraudCaseDto){
+    const repo=this.db.getRepository(FraudCaseEntity),row=await repo.findOneBy({id,organizationId:u.organizationId});
+    if(!row)throw new DomainError('Anomaly case was not found','FRAUD_CASE_NOT_FOUND',404);
+    Object.assign(row,dto,{updatedById:u.userId,resolvedAt:dto.status==='resolved'?new Date():dto.status?null:row.resolvedAt});
+    return repo.save(row);
+  }
+  async addVendorFraudNote(u:RequestContext,id:string,dto:AddCaseNoteDto){
+    if(!await this.db.getRepository(FraudCaseEntity).existsBy({id,organizationId:u.organizationId}))throw new DomainError('Anomaly case was not found','FRAUD_CASE_NOT_FOUND',404);
+    const repo=this.db.getRepository(FraudCaseNoteEntity);return repo.save(repo.create(this.audit(u,{caseId:id,body:dto.body,evidence:dto.evidence??[]})));
+  }
 
   async listExceptions(q: AuditExceptionQueryDto) { const r=this.db.getRepository(AuditExceptionEntity),search=q.query??q.search; const where:any={...(q.severity&&q.severity!=='all'?{severity:q.severity}:{}),...(q.status&&q.status!=='all'?{status:q.status}:{}),...(search?{title:ILike(`%${search}%`)}:{})}; const [rows,total]=await r.findAndCount({where,order:toOrder(q.sortBy,q.sortDirection,['createdAt','updatedAt','severity','status'] as const,'createdAt'),skip:(q.page-1)*q.pageSize,take:q.pageSize});return {items:rows.map(x=>({id:x.id,exception:x.title,severity:x.severity,age:age(x.createdAt),ageLabel:x.createdAt.toISOString(),status:x.status,closure:x.resolutionComment?{comment:x.resolutionComment,evidenceFileName:x.evidence[0]?.fileName}:undefined,kind:x.kind,correlationId:x.correlationId,requestMethod:x.requestMethod,requestPath:x.requestPath,originalStatus:x.originalStatus,errorCode:x.errorCode,details:x.details})),total,page:q.page,pageSize:q.pageSize,totalPages:Math.max(1,Math.ceil(total/q.pageSize))}; }
   async createException(u:RequestContext,dto:CreateAuditExceptionDto){const r=this.db.getRepository(AuditExceptionEntity);return r.save(r.create(this.audit(u,{...dto,status:'open',kind:'control',metadata:{}})));}

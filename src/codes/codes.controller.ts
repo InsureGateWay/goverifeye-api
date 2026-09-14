@@ -17,18 +17,18 @@ function requestCookie(request:Request,name:string){const raw=request.headers.co
 export class CodesController {
   constructor(private readonly codes: CodesService,private readonly scanIdentity:ScanIdentityService,private readonly activation:BatchActivationService) {}
   @RequiresActivatedOrganization() @Post() generate(@CurrentUser() user: RequestContext,@Headers('idempotency-key')key:string|undefined,@Body() dto: GenerateBatchDto) { return this.codes.generateBatch(user.organizationId, user.userId, dto,key); }
-  @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin) @Throttle({default:{limit:5,ttl:60000}}) @Post('open-market/lookup') @HttpCode(200)
+  @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin,UserRole.VendorStaff) @Throttle({default:{limit:5,ttl:60000}}) @Post('open-market/lookup') @HttpCode(200)
   openMarketLookup(@CurrentUser()user:RequestContext,@Body()dto:OpenMarketLookupDto){return this.codes.openMarketLookup(user,dto)}
-  @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin) @Throttle({default:{limit:5,ttl:60000}}) @Post('open-market/:claimId/link') @HttpCode(200)
+  @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin,UserRole.VendorStaff) @Throttle({default:{limit:5,ttl:60000}}) @Post('open-market/:claimId/link') @HttpCode(200)
   openMarketLink(@CurrentUser()user:RequestContext,@Param('claimId')claimId:string,@Body()dto:OpenMarketLinkDto){return this.codes.openMarketLink(user,claimId,dto)}
-  @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin) @Throttle({default:{limit:10,ttl:60000}}) @Post('open-market/:claimId/verify') @HttpCode(200)
+  @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin,UserRole.VendorStaff) @Throttle({default:{limit:10,ttl:60000}}) @Post('open-market/:claimId/verify') @HttpCode(200)
   openMarketVerify(@CurrentUser()user:RequestContext,@Param('claimId')claimId:string,@Body()dto:OpenMarketVerifyDto){return this.codes.openMarketVerify(user,claimId,dto)}
   @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin) @Post(':id/activation-pin/reveal') @HttpCode(200)
   revealPin(@CurrentUser()user:RequestContext,@Param('id')id:string,@Body()dto:RevealBatchPinDto,@Req()request:Request,@Res({passthrough:true})response:Response){
     response.set({'Cache-Control':'no-store, private','Pragma':'no-cache'});
     return this.activation.reveal(id,user,dto,request.ip??'unknown');
   }
-  @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin) @Post(':id/activate') @HttpCode(200)
+  @RequiresActivatedOrganization() @Roles(UserRole.VendorAdmin,UserRole.VendorStaff) @Post(':id/activate') @HttpCode(200)
   activate(@CurrentUser()user:RequestContext,@Param('id')id:string,@Body()dto:ActivateCodeBatchDto,@Req()request:Request){
     return this.activation.activate(id,user,dto,request.ip??'unknown');
   }

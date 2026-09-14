@@ -12,10 +12,10 @@ import { DomainError } from '../common/domain-error';
 import { ProductEntity } from '../products/product.entity';
 import { ProductStatus } from '../products/product.model';
 import { UserEntity } from '../auth/auth.entity';
-import { BatchQueryDto, CodeDetailsQueryDto, CodeQueryDto, GenerateBatchDto, OpenMarketLinkDto, OpenMarketLookupDto, OpenMarketVerifyDto } from './code.dto';
+import { BatchQueryDto, CodeDetailsQueryDto, CodeQueryDto, GenerateBatchDto, OpenMarketLinkDto, OpenMarketLookupDto, OpenMarketVerifyDto, RecallQueryDto } from './code.dto';
 import { pageOf } from '../common/api-response';
 import { toOrder } from '../common/page-query.dto';
-import { BatchStatus, CodeBatchEntity, CodeNamespaceEntity, OpenMarketBatchEntity, OpenMarketClaimEntity, VerificationCodeEntity, VerificationCodeStatus, VerificationEventEntity } from './code.entity';
+import { BatchStatus, CodeBatchEntity, CodeNamespaceEntity, OpenMarketBatchEntity, OpenMarketClaimEntity, RecallActionEntity, VerificationCodeEntity, VerificationCodeStatus, VerificationEventEntity } from './code.entity';
 import { CryptographicCodeGenerator, GeneratedGve16Code, GVE16_FORMAT } from './cryptographic-code-generator.service';
 import { ReliabilityService } from '../operations/reliability.service';
 import type { RequestContext } from '../common/request-context';
@@ -213,7 +213,7 @@ export class CodesService {
     if (!claim || (claim.expiresAt.getTime() <= Date.now() && !claim.otpHash)) {
       throw new DomainError('The Open Market claim has expired', 'OPEN_MARKET_CLAIM_EXPIRED', 400);
     }
-    if (!account || account.role !== 'vendor_admin' || !product) {
+    if (!account || !['vendor_admin','vendor_staff'].includes(account.role) || !product) {
       throw new DomainError('The account or selected product is unavailable', 'OPEN_MARKET_PRODUCT_INVALID', 400);
     }
     if (!await this.dataSource.getRepository(OpenMarketBatchEntity).existsBy({
@@ -455,32 +455,58 @@ export class CodesService {
   async cancelBatch(organizationId:string,id:string){const repo=this.dataSource.getRepository(CodeBatchEntity),batch=batchLookup(id)?await repo.findOneBy({...batchLookup(id)!,organizationId}):null;if(!batch)throw new DomainError('Code batch was not found','BATCH_NOT_FOUND',404);if(batch.status!==BatchStatus.Generating)throw new DomainError('Only a generating batch can be cancelled','BATCH_NOT_CANCELLABLE',409);batch.status=BatchStatus.Failed;return repo.save(batch)}
   /** Sheet2 #23 — suspend every market-active code in a batch (→ revoked). */
   async suspendBatch(organizationId: string, actorId: string, id: string) {
-    await this.getBatch(organizationId, id);
+    const lookup=batchLookup(id),repo=this.dataSource.getRepository(CodeBatchEntity),batch=lookup?await repo.findOneBy({...lookup,organizationId}):null;
+    if(!batch)throw new DomainError('Code batch was not found','BATCH_NOT_FOUND',404);
+    if(batch.status===BatchStatus.Recalled)throw new DomainError('A recalled batch cannot be suspended','BATCH_STATE_INVALID',409);
     const result = await this.dataSource
       .getRepository(VerificationCodeEntity)
       .createQueryBuilder()
       .update(VerificationCodeEntity)
       .set({ status: VerificationCodeStatus.Revoked })
-      .where('"organizationId" = :organizationId AND "batchId" = :id', { organizationId, id })
+      .where('"organizationId" = :organizationId AND "batchId" = :id', { organizationId, id:batch.id })
       .andWhere('status = :active', { active: VerificationCodeStatus.MarketActive })
       .execute();
+    batch.status=BatchStatus.Revoked;await repo.save(batch);
     void actorId;
-    return { batchId: id, suspendedCodes: result.affected ?? 0 };
+    return { batchId: batch.id, suspendedCodes: result.affected ?? 0 };
   }
   /** Sheet2 #23 — reactivate revoked codes in a batch (→ market active). */
   async reactivateBatch(organizationId: string, actorId: string, id: string) {
-    await this.getBatch(organizationId, id);
+    const lookup=batchLookup(id),repo=this.dataSource.getRepository(CodeBatchEntity),batch=lookup?await repo.findOneBy({...lookup,organizationId}):null;
+    if(!batch)throw new DomainError('Code batch was not found','BATCH_NOT_FOUND',404);
+    if(batch.status===BatchStatus.Recalled)throw new DomainError('A recalled batch cannot be reactivated','BATCH_STATE_INVALID',409);
     const result = await this.dataSource
       .getRepository(VerificationCodeEntity)
       .createQueryBuilder()
       .update(VerificationCodeEntity)
       .set({ status: VerificationCodeStatus.MarketActive })
-      .where('"organizationId" = :organizationId AND "batchId" = :id', { organizationId, id })
+      .where('"organizationId" = :organizationId AND "batchId" = :id', { organizationId, id:batch.id })
       .andWhere('status = :suspended', { suspended: VerificationCodeStatus.Revoked })
       .execute();
+    batch.status=BatchStatus.MarketActive;await repo.save(batch);
     void actorId;
-    return { batchId: id, reactivatedCodes: result.affected ?? 0 };
+    return { batchId: batch.id, reactivatedCodes: result.affected ?? 0 };
   }
+  async recallBatch(organizationId:string,actorId:string,id:string,reason:string){return this.dataSource.transaction(async manager=>{
+    const lookup=batchLookup(id),repo=manager.getRepository(CodeBatchEntity),batch=lookup?await repo.findOne({where:{...lookup,organizationId},lock:{mode:'pessimistic_write'}}):null;
+    if(!batch)throw new DomainError('Code batch was not found','BATCH_NOT_FOUND',404);
+    if(batch.status===BatchStatus.Recalled)throw new DomainError('Code batch is already recalled','BATCH_STATE_INVALID',409);
+    const previousStatus=batch.status;batch.status=BatchStatus.Recalled;await repo.save(batch);
+    const result=await manager.getRepository(VerificationCodeEntity).createQueryBuilder().update(VerificationCodeEntity).set({status:VerificationCodeStatus.Recalled}).where('"organizationId" = :organizationId AND "batchId" = :batchId',{organizationId,batchId:batch.id}).andWhere('status NOT IN (:...terminal)',{terminal:[VerificationCodeStatus.Retired,VerificationCodeStatus.Recalled]}).execute();
+    const action=await manager.save(RecallActionEntity,manager.create(RecallActionEntity,{organizationId,actorId,scopeType:'batch',scopeId:batch.id,previousStatus,reason:reason.trim(),affectedCodes:result.affected??0}));
+    return{...action,batchReference:displayBatchReference(batch.batchReference)};
+  })}
+  async recallProduct(organizationId:string,actorId:string,id:string,reason:string){return this.dataSource.transaction(async manager=>{
+    const products=manager.getRepository(ProductEntity),product=await products.findOne({where:{id,organizationId},lock:{mode:'pessimistic_write'}});
+    if(!product)throw new DomainError('Product was not found','PRODUCT_NOT_FOUND',404);
+    if(product.status===ProductStatus.Recalled)throw new DomainError('Product is already recalled','PRODUCT_STATE_INVALID',409);
+    const previousStatus=product.status;product.status=ProductStatus.Recalled;await products.save(product);
+    await manager.getRepository(CodeBatchEntity).createQueryBuilder().update(CodeBatchEntity).set({status:BatchStatus.Recalled}).where('"organizationId" = :organizationId AND "productId" = :productId',{organizationId,productId:id}).andWhere('status NOT IN (:...terminal)',{terminal:[BatchStatus.Retired,BatchStatus.Recalled,BatchStatus.Failed]}).execute();
+    const result=await manager.getRepository(VerificationCodeEntity).createQueryBuilder().update(VerificationCodeEntity).set({status:VerificationCodeStatus.Recalled}).where('"organizationId" = :organizationId AND "productId" = :productId',{organizationId,productId:id}).andWhere('status NOT IN (:...terminal)',{terminal:[VerificationCodeStatus.Retired,VerificationCodeStatus.Recalled]}).execute();
+    const action=await manager.save(RecallActionEntity,manager.create(RecallActionEntity,{organizationId,actorId,scopeType:'product',scopeId:id,previousStatus,reason:reason.trim(),affectedCodes:result.affected??0}));
+    return{...action,productName:product.name};
+  })}
+  async listRecalls(organizationId:string,query:RecallQueryDto){const repo=this.dataSource.getRepository(RecallActionEntity),where={organizationId,...(query.scopeType?{scopeType:query.scopeType}:{})};const[rows,total]=await repo.findAndCount({where,order:toOrder(query.sortBy,query.sortDirection,['createdAt','scopeType','affectedCodes']as const,'createdAt'),skip:(query.page-1)*query.pageSize,take:query.pageSize});const productIds=rows.filter(r=>r.scopeType==='product').map(r=>r.scopeId),batchIds=rows.filter(r=>r.scopeType==='batch').map(r=>r.scopeId);const[products,batches]=await Promise.all([productIds.length?this.dataSource.getRepository(ProductEntity).find({where:{organizationId,id:In(productIds)}}):[],batchIds.length?this.dataSource.getRepository(CodeBatchEntity).find({where:{organizationId,id:In(batchIds)}}):[]]);const productNames=new Map(products.map(p=>[p.id,p.name])),batchRefs=new Map(batches.map(b=>[b.id,displayBatchReference(b.batchReference)]));return pageOf(rows.map(row=>({...row,reference:row.scopeType==='product'?productNames.get(row.scopeId)??row.scopeId:batchRefs.get(row.scopeId)??row.scopeId})),total,query.page,query.pageSize,query.sortBy,query.sortDirection)}
   async setCodeStatus(organizationId:string,id:string,status:'suspended'|'active'){const repo=this.dataSource.getRepository(VerificationCodeEntity),row=await repo.findOneBy({id,organizationId});if(!row)throw new DomainError('Verification code was not found','CODE_NOT_FOUND',404);if(status==='active'&&row.status!==VerificationCodeStatus.Revoked)throw new DomainError('Only a revoked market code can be reactivated','CODE_STATE_INVALID',409);if(status==='suspended'&&row.status!==VerificationCodeStatus.MarketActive)throw new DomainError('Only a market-active code can be revoked','CODE_STATE_INVALID',409);row.status=status==='active'?VerificationCodeStatus.MarketActive:VerificationCodeStatus.Revoked;return this.safeCode(await repo.save(row))}
 
   private async allocateCodes(manager:EntityManager,organizationId:string,allocationId:string,quantity:number):Promise<GeneratedGve16Code[]>{

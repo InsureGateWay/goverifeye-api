@@ -2,6 +2,7 @@ import { IsEmail, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Matches, Ma
 import { Transform, Type } from 'class-transformer';
 import { VerifyProductCodeDto } from '../codes/code.dto';
 import type { CustomerCheckRequestDto, ConcernRequestDto, CustomerSupportRequestDto, ShopperAccountDeleteRequestDto, ShopperChallengeRequestDto, ShopperLoginRequestDto, ShopperPasswordLoginRequestDto, ShopperPasswordResetCompleteRequestDto, ShopperPasswordResetVerifyRequestDto, ShopperRegistrationCompleteRequestDto, ShopperRegistrationVerifyRequestDto } from './customer.contract';
+import { PageQueryDto } from '../common/page-query.dto';
 
 export class CustomerCheckBody extends VerifyProductCodeDto implements CustomerCheckRequestDto {
   @IsUUID() requestId!: string;
@@ -44,4 +45,12 @@ export class ConcernBody implements ConcernRequestDto {
   @IsIn(['Product details do not match the item', 'Label looks damaged or reused', 'Seller concern', 'Product looks suspicious', 'Other']) reason!: string;
   @IsOptional() @IsString() @Length(1, 500) note?: string;
   @IsOptional() @IsString() @MaxLength(1400000) @Matches(/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/) photo?: string;
+}
+export class VendorConcernQuery extends PageQueryDto {
+  @IsOptional() @IsIn(['new','reviewing','resolved','dismissed']) status?: string;
+  @IsIn(['createdAt','updatedAt','status','reason']) override sortBy = 'createdAt';
+}
+export class UpdateVendorConcernBody {
+  @IsIn(['reviewing','resolved','dismissed']) status!: 'reviewing' | 'resolved' | 'dismissed';
+  @IsOptional() @IsString() @Length(1, 4000) resolutionNote?: string;
 }

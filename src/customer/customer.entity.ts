@@ -54,4 +54,7 @@ export class CustomerConcernEntity extends BaseEntity {
   @Column({ length: 100 }) reason!: string;
   @Column('text', { nullable: true }) note!: string | null;
   @Column('text', { nullable: true, select: false }) photo!: string | null;
+  @Column({ type: 'varchar', length: 24, default: 'new' }) @Index() status!: 'new' | 'reviewing' | 'resolved' | 'dismissed';
+  @Column('uuid', { nullable: true }) assignedToId!: string | null;
+  @Column('text', { nullable: true }) resolutionNote!: string | null;
 }

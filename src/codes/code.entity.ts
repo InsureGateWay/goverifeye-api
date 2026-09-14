@@ -40,6 +40,16 @@ export class VerificationCodeEntity extends BaseEntity {
   @Column('uuid', { nullable: true }) activatedBy?: string; @Column({ type: 'timestamp', nullable: true }) lastVerifiedAt?: Date;
   @BeforeInsert() bindGve16Unit(){if(this.codeFormatVersion){this.id||=randomUUID();this.unitId??=this.id;}}
 }
+@Entity('recall_actions') @Index(['organizationId','createdAt'])
+export class RecallActionEntity extends BaseEntity {
+  @Column('uuid') @Index() organizationId!: string;
+  @Column('uuid') actorId!: string;
+  @Column({ type:'varchar', length:16 }) scopeType!: 'product' | 'batch';
+  @Column('uuid') @Index() scopeId!: string;
+  @Column({ type:'varchar', length:32 }) previousStatus!: string;
+  @Column('text') reason!: string;
+  @Column({ type:'int', default:0 }) affectedCodes!: number;
+}
 @Entity('open_market_batches') export class OpenMarketBatchEntity extends BaseEntity { @Column({unique:true}) @Index() publicBatchId!:string; @Column() activationCodeHash!:string; @Column() labelType!:LabelType; @Column() quantity!:number; @Column({type:'decimal',precision:12,scale:2}) totalCost!:number; @Column({default:'available'}) status!:'available'|'claimed'; @Column('uuid',{nullable:true}) claimedByOrganizationId?:string; @Column('uuid',{nullable:true}) claimedCodeBatchId?:string; @Column({type:'timestamp',nullable:true}) claimedAt?:Date; }
 @Entity('open_market_claims') @Index(['userId','inventoryBatchId']) export class OpenMarketClaimEntity extends BaseEntity { @Column('uuid') userId!:string; @Column('uuid') organizationId!:string; @Column('uuid') inventoryBatchId!:string; @Column('uuid',{nullable:true}) productId?:string; @Column({nullable:true}) otpHash?:string; @Column({type:'timestamp'}) expiresAt!:Date; @Column({default:0}) attempts!:number; @Column({default:false}) consumed!:boolean; }
 @Entity('verification_events') @Index(['organizationId','createdAt']) export class VerificationEventEntity extends BaseEntity { @Column('uuid',{nullable:true}) organizationId!:string; @Column('uuid',{nullable:true}) productId!:string; @Column('uuid',{nullable:true}) codeId!:string; @Column({default:'valid'}) outcome!:string; @Column({default:'manual'}) channel!:string; @Column({type:'varchar',nullable:true}) submittedCodeHash?:string|null; @Column({nullable:true}) location?:string; @Column({nullable:true}) ipAddress?:string; @Column({nullable:true}) customerComplaint?:string; @Column({nullable:true}) ipHash?:string; @Column({nullable:true}) userAgentHash?:string; @Column({nullable:true}) @Index() scannerHash?:string; @Column({default:0}) riskScore!:number; @Column({type:'json',nullable:true}) riskReasons?:string[]; }
